@@ -1,18 +1,59 @@
 """
 Roblox API Service for RBX Detective.
-Retrieves comprehensive public player information from official Roblox APIs.
+Retrieves comprehensive player information from official Roblox APIs.
+Supports custom Roblox Cookie (.ROBLOSECURITY) for game badges & private queries.
 """
+import os
 import requests
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class RobloxAPI:
+    COOKIE_FILE = "roblox_cookie.txt"
     SESSION = requests.Session()
     SESSION.headers.update({
-        "User-Agent": "RBX-Detective-App/1.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
     })
+
+    @classmethod
+    def load_saved_cookie(cls) -> Optional[str]:
+        """Loads saved .ROBLOSECURITY cookie if available."""
+        if os.path.exists(cls.COOKIE_FILE):
+            try:
+                with open(cls.COOKIE_FILE, "r", encoding="utf-8") as f:
+                    cookie = f.read().strip()
+                    if cookie:
+                        cls.set_cookie(cookie)
+                        return cookie
+            except Exception:
+                pass
+        return None
+
+    @classmethod
+    def set_cookie(cls, cookie: str):
+        """Sets the .ROBLOSECURITY cookie in the session and saves to file."""
+        clean_cookie = cookie.strip()
+        if clean_cookie.startswith(".ROBLOSECURITY="):
+            clean_cookie = clean_cookie.replace(".ROBLOSECURITY=", "", 1).strip()
+        
+        cls.SESSION.cookies.set(".ROBLOSECURITY", clean_cookie, domain=".roblox.com")
+        try:
+            with open(cls.COOKIE_FILE, "w", encoding="utf-8") as f:
+                f.write(clean_cookie)
+        except Exception:
+            pass
+
+    @classmethod
+    def clear_cookie(cls):
+        """Removes the stored cookie."""
+        cls.SESSION.cookies.clear()
+        if os.path.exists(cls.COOKIE_FILE):
+            try:
+                os.remove(cls.COOKIE_FILE)
+            except Exception:
+                pass
 
     @classmethod
     def get_user_by_name(cls, username: str) -> Optional[Dict[str, Any]]:
@@ -35,8 +76,24 @@ class RobloxAPI:
         return None
 
     @classmethod
+    def get_game_details_by_place(cls, place_id: int) -> Optional[Dict[str, Any]]:
+        """Fetches game/experience details by placeId (cross-checked via universeId)."""
+        try:
+            u_res = cls.SESSION.get(f"https://apis.roblox.com/universes/v1/places/{place_id}/universe", timeout=6)
+            if u_res.status_code == 200:
+                uid = u_res.json().get("universeId")
+                g_res = cls.SESSION.get(f"https://games.roblox.com/v1/games?universeIds={uid}", timeout=6)
+                if g_res.status_code == 200:
+                    data = g_res.json().get("data", [])
+                    if data:
+                        return data[0]
+        except Exception:
+            pass
+        return None
+
+    @classmethod
     def get_presence(cls, user_id: int) -> Dict[str, Any]:
-        """Fetch presence status (Offline, Online, InGame, InStudio)."""
+        """Fetch presence status (Offline, Online, InGame, InStudio) and game info."""
         url = "https://presence.roblox.com/v1/presence/users"
         try:
             resp = cls.SESSION.post(url, json={"userIds": [user_id]}, timeout=10)
@@ -53,16 +110,39 @@ class RobloxAPI:
                     }
                     ptype = p.get("userPresenceType", 0)
                     status_str, color = type_map.get(ptype, ("Unknown", "#80848e"))
+                    
+                    place_id = p.get("placeId")
+                    game_id = p.get("gameId") # Job ID / Server instance
+                    game_name = p.get("lastLocation", "")
+
+                    # If in game and we have a placeId, get rich game information
+                    if place_id:
+                        g_info = cls.get_game_details_by_place(place_id)
+                        if g_info:
+                            game_name = g_info.get("name", game_name)
+
                     return {
+                        "presenceType": ptype,
                         "status": status_str,
                         "color": color,
+                        "gameName": game_name,
+                        "placeId": place_id,
+                        "gameId": game_id,
                         "lastLocation": p.get("lastLocation", ""),
-                        "placeId": p.get("placeId"),
                         "lastOnline": p.get("lastOnline")
                     }
         except Exception:
             pass
-        return {"status": "Offline", "color": "#80848e", "lastLocation": "", "placeId": None, "lastOnline": None}
+        return {
+            "presenceType": 0,
+            "status": "Offline",
+            "color": "#80848e",
+            "gameName": "",
+            "placeId": None,
+            "gameId": None,
+            "lastLocation": "",
+            "lastOnline": None
+        }
 
     @classmethod
     def get_avatar_thumbnails(cls, user_id: int) -> Dict[str, Optional[str]]:
@@ -157,11 +237,60 @@ class RobloxAPI:
         return []
 
     @classmethod
+    def get_game_badges(cls, user_id: int, limit: int = 50) -> Dict[str, Any]:
+        """
+        Fetches user badges won from all Roblox games/experiences.
+        Requires authentication cookie (.ROBLOSECURITY) according to Roblox Badges API v1.
+        Returns {'success': bool, 'badges': list, 'needs_auth': bool, 'error': str}
+        """
+        url = f"https://badges.roblox.com/v1/users/{user_id}/badges?limit={limit}&sortOrder=Desc"
+        try:
+            resp = cls.SESSION.get(url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                formatted_badges = []
+                for b in data:
+                    formatted_badges.append({
+                        "id": b.get("id"),
+                        "name": b.get("name"),
+                        "description": b.get("description", ""),
+                        "awarder": b.get("awarder", {}).get("name", "Гра Roblox"),
+                        "created": b.get("created")
+                    })
+                return {"success": True, "badges": formatted_badges, "needs_auth": False, "error": None}
+            elif resp.status_code == 401:
+                return {
+                    "success": False,
+                    "badges": [],
+                    "needs_auth": True,
+                    "error": "Roblox API вимагає авторизації (.ROBLOSECURITY cookie) для перегляду бейджів з ігор."
+                }
+            elif resp.status_code == 403:
+                return {
+                    "success": False,
+                    "badges": [],
+                    "needs_auth": False,
+                    "error": "Інвентар або бейджі цього гравця приховані налаштуваннями приватності."
+                }
+            else:
+                return {
+                    "success": False,
+                    "badges": [],
+                    "needs_auth": False,
+                    "error": f"Сервер повернув код {resp.status_code}."
+                }
+        except Exception as e:
+            return {"success": False, "badges": [], "needs_auth": False, "error": str(e)}
+
+    @classmethod
     def fetch_full_profile(cls, query: str) -> Dict[str, Any]:
         """
         Coordinates full data fetching.
         query can be a numeric user_id or a username string.
         """
+        # Ensure saved cookie is active
+        cls.load_saved_cookie()
+
         user_basic = None
         if query.isdigit():
             user_basic = {"id": int(query)}
@@ -199,7 +328,8 @@ class RobloxAPI:
         socials = cls.get_social_counts(uid)
         past_names = cls.get_past_usernames(uid)
         groups = cls.get_groups(uid)
-        badges = cls.get_roblox_badges(uid)
+        roblox_badges = cls.get_roblox_badges(uid)
+        game_badges_result = cls.get_game_badges(uid)
 
         return {
             "id": uid,
@@ -215,6 +345,7 @@ class RobloxAPI:
             "socials": socials,
             "pastNames": past_names,
             "groups": groups,
-            "badges": badges,
+            "robloxBadges": roblox_badges,
+            "gameBadgesResult": game_badges_result,
             "profileUrl": f"https://www.roblox.com/users/{uid}/profile"
         }

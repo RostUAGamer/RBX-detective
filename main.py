@@ -1,12 +1,14 @@
 """
 RBX Detective - Головний застосунок (CustomTkinter GUI)
 Зручний та сучасний інтерфейс для аналізу гравців Roblox.
+Включає приєднання до гри (Join Game) та перегляд ігрових досягнень.
 """
+import os
 import threading
 import webbrowser
 from io import BytesIO
 import customtkinter as ctk
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image
 import requests
 
 from roblox_api import RobloxAPI
@@ -21,24 +23,25 @@ class RBXDetectiveApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("RBX Detective — Roblox Player Intel")
-        self.geometry("980x740")
-        self.minsize(880, 640)
+        self.title("RBX Detective — Roblox Player Intel & Tracker")
+        self.geometry("1020x760")
+        self.minsize(920, 660)
 
-        # Змінна для посилань на аватар (щоб GC не видаляв)
         self.current_avatar_image = None
         self.current_profile_data = None
+
+        # Завантажуємо збережену cookie (якщо є)
+        RobloxAPI.load_saved_cookie()
 
         self._init_ui()
 
     def _init_ui(self):
-        # Головний контейнер з відступами
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # 1. Верхня панель пошуку (Header / Search Bar)
+        # 1. Верхня панель пошуку + Налаштування Cookie
         search_frame = ctk.CTkFrame(self, corner_radius=14, fg_color="#181b22", border_width=1, border_color="#272d38")
-        search_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        search_frame.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
         search_frame.grid_columnconfigure(1, weight=1)
 
         title_lbl = ctk.CTkLabel(
@@ -63,36 +66,47 @@ class RBXDetectiveApp(ctk.CTk):
 
         self.search_btn = ctk.CTkButton(
             search_frame,
-            text="Знайти гравця",
+            text="Знайти",
             font=ctk.CTkFont(size=14, weight="bold"),
             height=40,
+            width=100,
             corner_radius=10,
             fg_color="#0284c7",
             hover_color="#0369a1",
             command=self.start_search
         )
-        self.search_btn.grid(row=0, column=2, padx=(0, 16), pady=12)
+        self.search_btn.grid(row=0, column=2, padx=(0, 10), pady=12)
 
-        # 2. Статус-бар (завантаження / помилки)
+        self.settings_btn = ctk.CTkButton(
+            search_frame,
+            text="⚙️",
+            font=ctk.CTkFont(size=16),
+            height=40,
+            width=40,
+            corner_radius=10,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._open_cookie_dialog
+        )
+        self.settings_btn.grid(row=0, column=3, padx=(0, 16), pady=12)
+
+        # 2. Статус-бар
         self.status_lbl = ctk.CTkLabel(
             self,
-            text="Введіть нікнейм гравця та натисніть «Знайти гравця» або клавішу Enter",
+            text="Введіть нікнейм або ID гравця та натисніть «Знайти»",
             font=ctk.CTkFont(size=13),
             text_color="#94a3b8"
         )
-        self.status_lbl.grid(row=2, column=0, padx=20, pady=(4, 12), sticky="w")
+        self.status_lbl.grid(row=2, column=0, padx=20, pady=(2, 10), sticky="w")
 
         # 3. Основна область вмісту
         self.main_content = ctk.CTkFrame(self, corner_radius=16, fg_color="#13161c")
         self.main_content.grid(row=1, column=0, padx=20, pady=5, sticky="nsew")
-        self.main_content.grid_columnconfigure(0, weight=1, minsize=290)
+        self.main_content.grid_columnconfigure(0, weight=1, minsize=300)
         self.main_content.grid_columnconfigure(1, weight=3)
         self.main_content.grid_rowconfigure(0, weight=1)
 
-        # Ліва колонка: Аватар + Статус онлайну + Посилання
         self._build_left_profile_panel()
-
-        # Права колонка: Вкладки з детальною інформацією
         self._build_right_tabview()
 
     def _build_left_profile_panel(self):
@@ -101,14 +115,14 @@ class RBXDetectiveApp(ctk.CTk):
         self.left_card.grid_columnconfigure(0, weight=1)
 
         # Аватар
-        self.avatar_canvas = ctk.CTkLabel(self.left_card, text="", width=150, height=150)
-        self.avatar_canvas.grid(row=0, column=0, pady=(20, 10))
+        self.avatar_canvas = ctk.CTkLabel(self.left_card, text="", width=140, height=140)
+        self.avatar_canvas.grid(row=0, column=0, pady=(16, 8))
 
         # Нікнейм та Display Name
         self.display_name_lbl = ctk.CTkLabel(
             self.left_card,
             text="—",
-            font=ctk.CTkFont(size=19, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color="#f8fafc"
         )
         self.display_name_lbl.grid(row=1, column=0, padx=12, pady=(0, 2))
@@ -116,48 +130,58 @@ class RBXDetectiveApp(ctk.CTk):
         self.username_lbl = ctk.CTkLabel(
             self.left_card,
             text="@—",
-            font=ctk.CTkFont(size=14),
+            font=ctk.CTkFont(size=13),
             text_color="#94a3b8"
         )
-        self.username_lbl.grid(row=2, column=0, padx=12, pady=(0, 10))
+        self.username_lbl.grid(row=2, column=0, padx=12, pady=(0, 8))
 
         # Бейдж статусу онлайн
         self.presence_badge = ctk.CTkLabel(
             self.left_card,
             text="● Offline",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             fg_color="#334155",
             text_color="#e2e8f0",
             corner_radius=8,
             padx=12,
             pady=4
         )
-        self.presence_badge.grid(row=3, column=0, pady=(0, 12))
+        self.presence_badge.grid(row=3, column=0, pady=(0, 8))
 
-        # Бейдж бану / валідності
-        self.banned_badge = ctk.CTkLabel(
+        # Інформація про гру (якщо грає)
+        self.game_info_lbl = ctk.CTkLabel(
             self.left_card,
-            text="Активний",
+            text="",
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#14532d",
-            text_color="#86efac",
-            corner_radius=6,
-            padx=10,
-            pady=3
+            text_color="#a5b4fc",
+            wraplength=260
         )
-        self.banned_badge.grid(row=4, column=0, pady=(0, 15))
+        self.game_info_lbl.grid(row=4, column=0, padx=10, pady=(0, 6))
+
+        # КНОПКА: Приєднатися до гри (Join Game)
+        self.join_game_btn = ctk.CTkButton(
+            self.left_card,
+            text="🎮 Приєднатися до гри",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#10b981",
+            hover_color="#059669",
+            corner_radius=8,
+            state="disabled",
+            command=self._join_player_game
+        )
+        self.join_game_btn.grid(row=5, column=0, padx=20, pady=(4, 6), sticky="ew")
 
         # Кнопка відкриття профілю на сайті
         self.open_profile_btn = ctk.CTkButton(
             self.left_card,
             text="Відкрити профіль Roblox ↗",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             fg_color="#2563eb",
             hover_color="#1d4ed8",
             corner_radius=8,
             command=self._open_roblox_profile
         )
-        self.open_profile_btn.grid(row=5, column=0, padx=20, pady=(10, 20), sticky="ew")
+        self.open_profile_btn.grid(row=6, column=0, padx=20, pady=(4, 16), sticky="ew")
 
     def _build_right_tabview(self):
         self.tabview = ctk.CTkTabview(
@@ -170,22 +194,22 @@ class RBXDetectiveApp(ctk.CTk):
         )
         self.tabview.grid(row=0, column=1, padx=(8, 14), pady=14, sticky="nsew")
 
-        # Створення вкладок
         self.tab_info = self.tabview.add("👤 Профіль")
+        self.tab_game_badges = self.tabview.add("🏆 Досягнення з ігор")
         self.tab_groups = self.tabview.add("👥 Групи")
-        self.tab_past_names = self.tabview.add("📜 Старі нікнейми")
-        self.tab_badges = self.tabview.add("🏅 Бейджі")
+        self.tab_past_names = self.tabview.add("📜 Нікнейми")
+        self.tab_roblox_badges = self.tabview.add("🏅 Roblox бейджі")
 
         self._setup_info_tab()
+        self._setup_game_badges_tab()
         self._setup_groups_tab()
         self._setup_past_names_tab()
-        self._setup_badges_tab()
+        self._setup_roblox_badges_tab()
 
     def _setup_info_tab(self):
         self.tab_info.grid_columnconfigure(0, weight=1)
         self.tab_info.grid_columnconfigure(1, weight=1)
 
-        # Статистичні картки (User ID, Дата створення, Друзі, Підписники)
         self.stat_cards = {}
         fields = [
             ("User ID", "0", 0, 0),
@@ -207,7 +231,6 @@ class RBXDetectiveApp(ctk.CTk):
             lbl_val.pack(anchor="w", padx=12, pady=(0, 8))
             self.stat_cards[title] = lbl_val
 
-        # Біографія / Опис
         desc_frame = ctk.CTkFrame(self.tab_info, corner_radius=10, fg_color="#111620", border_width=1, border_color="#272f3d")
         desc_frame.grid(row=3, column=0, columnspan=2, padx=6, pady=10, sticky="nsew")
         self.tab_info.grid_rowconfigure(3, weight=1)
@@ -225,6 +248,17 @@ class RBXDetectiveApp(ctk.CTk):
         )
         self.desc_textbox.pack(fill="both", expand=True, padx=10, pady=(2, 10))
 
+    def _setup_game_badges_tab(self):
+        self.game_badges_scroll = ctk.CTkScrollableFrame(self.tab_game_badges, corner_radius=10, fg_color="#111620")
+        self.game_badges_scroll.pack(fill="both", expand=True, padx=6, pady=6)
+        self.game_badges_placeholder = ctk.CTkLabel(
+            self.game_badges_scroll,
+            text="Тут відображаються досягнення, здобуті гравцем у різних іграх Roblox\n(Потрібна авторизація через кнопку ⚙️ або відкритий інвентар)",
+            text_color="#64748b",
+            justify="center"
+        )
+        self.game_badges_placeholder.pack(pady=40)
+
     def _setup_groups_tab(self):
         self.groups_scroll = ctk.CTkScrollableFrame(self.tab_groups, corner_radius=10, fg_color="#111620")
         self.groups_scroll.pack(fill="both", expand=True, padx=6, pady=6)
@@ -237,11 +271,69 @@ class RBXDetectiveApp(ctk.CTk):
         self.past_names_placeholder = ctk.CTkLabel(self.past_names_scroll, text="Історія нікнеймів з'явиться тут", text_color="#64748b")
         self.past_names_placeholder.pack(pady=40)
 
-    def _setup_badges_tab(self):
-        self.badges_scroll = ctk.CTkScrollableFrame(self.tab_badges, corner_radius=10, fg_color="#111620")
-        self.badges_scroll.pack(fill="both", expand=True, padx=6, pady=6)
-        self.badges_placeholder = ctk.CTkLabel(self.badges_scroll, text="Офіційні бейджі Roblox з'являться тут", text_color="#64748b")
-        self.badges_placeholder.pack(pady=40)
+    def _setup_roblox_badges_tab(self):
+        self.roblox_badges_scroll = ctk.CTkScrollableFrame(self.tab_roblox_badges, corner_radius=10, fg_color="#111620")
+        self.roblox_badges_scroll.pack(fill="both", expand=True, padx=6, pady=6)
+        self.roblox_badges_placeholder = ctk.CTkLabel(self.roblox_badges_scroll, text="Офіційні бейджі платформи з'являться тут", text_color="#64748b")
+        self.roblox_badges_placeholder.pack(pady=40)
+
+    def _open_cookie_dialog(self):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Налаштування Roblox Cookie (.ROBLOSECURITY)")
+        dialog.geometry("540x360")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+
+        info_lbl = ctk.CTkLabel(
+            dialog,
+            text="🔑 Авторизація для доступу до досягнень з ігор",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color="#38bdf8"
+        )
+        info_lbl.pack(pady=(20, 8))
+
+        desc_lbl = ctk.CTkLabel(
+            dialog,
+            text="API ігрових бейджей Roblox (Badges API v1) вимагає cookie облікового запису.\nВставте сюди значення .ROBLOSECURITY із вашого браузера, щоб розблокувати\nперегляд ігрових нагород будь-яких користувачів.",
+            font=ctk.CTkFont(size=12),
+            text_color="#94a3b8",
+            justify="center"
+        )
+        desc_lbl.pack(pady=(0, 12), padx=20)
+
+        cookie_entry = ctk.CTkEntry(
+            dialog,
+            placeholder_text="Вставте .ROBLOSECURITY cookie сюди...",
+            width=480,
+            show="•"
+        )
+        cookie_entry.pack(pady=10)
+
+        saved = RobloxAPI.load_saved_cookie()
+        if saved:
+            cookie_entry.insert(0, saved)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def save():
+            c_val = cookie_entry.get().strip()
+            if c_val:
+                RobloxAPI.set_cookie(c_val)
+                self.status_lbl.configure(text="✅ Cookie збережено! Тепер доступні досягнення з ігор.", text_color="#10b981")
+            dialog.destroy()
+
+        def clear():
+            RobloxAPI.clear_cookie()
+            cookie_entry.delete(0, "end")
+            self.status_lbl.configure(text="ℹ️ Cookie видалено.", text_color="#94a3b8")
+            dialog.destroy()
+
+        save_btn = ctk.CTkButton(btn_frame, text="Зберегти", fg_color="#10b981", hover_color="#059669", width=120, command=save)
+        save_btn.pack(side="left", padx=10)
+
+        clear_btn = ctk.CTkButton(btn_frame, text="Очистити", fg_color="#ef4444", hover_color="#dc2626", width=120, command=clear)
+        clear_btn.pack(side="left", padx=10)
 
     def start_search(self):
         query = self.search_entry.get().strip()
@@ -252,7 +344,6 @@ class RBXDetectiveApp(ctk.CTk):
         self.status_lbl.configure(text=f"⏳ Отримую дані для «{query}» з серверів Roblox...", text_color="#38bdf8")
         self.search_btn.configure(state="disabled")
 
-        # Запускаємо в окремому потоці, щоб UI не блокувався під час мережевих запитів
         thread = threading.Thread(target=self._search_worker, args=(query,), daemon=True)
         thread.start()
 
@@ -260,7 +351,6 @@ class RBXDetectiveApp(ctk.CTk):
         try:
             profile = RobloxAPI.fetch_full_profile(query)
             
-            # Завантаження аватара
             avatar_image = None
             if profile.get("avatarUrl"):
                 try:
@@ -280,7 +370,6 @@ class RBXDetectiveApp(ctk.CTk):
         self.search_btn.configure(state="normal")
         self.status_lbl.configure(text=f"✅ Успішно завантажено профіль @{profile['username']}", text_color="#10b981")
 
-        # Оновлення лівої картки
         self.display_name_lbl.configure(text=profile["displayName"])
         self.username_lbl.configure(text=f"@{profile['username']}")
 
@@ -290,15 +379,17 @@ class RBXDetectiveApp(ctk.CTk):
         else:
             self.avatar_canvas.configure(image="", text="👤\n(Немає фото)")
 
-        # Онлайн статус
+        # Онлайн статус та кнопка Join Game
         pres = profile["presence"]
         self.presence_badge.configure(text=f"● {pres['status']}", fg_color=pres["color"])
 
-        # Бан статус
-        if profile["isBanned"]:
-            self.banned_badge.configure(text="⛔ ЗАБАНЕНИЙ", fg_color="#7f1d1d", text_color="#fca5a5")
+        if pres["presenceType"] == 2:  # In-Game
+            game_title = pres.get("gameName") or "Невідома гра"
+            self.game_info_lbl.configure(text=f"🎮 У грі:\n{game_title}")
+            self.join_game_btn.configure(state="normal", text="🎮 Приєднатися до гри")
         else:
-            self.banned_badge.configure(text="✓ Активний", fg_color="#14532d", text_color="#86efac")
+            self.game_info_lbl.configure(text="")
+            self.join_game_btn.configure(state="disabled", text="🎮 Гравець не в грі")
 
         # Статистичні поля
         self.stat_cards["User ID"].configure(text=str(profile["id"]))
@@ -315,14 +406,96 @@ class RBXDetectiveApp(ctk.CTk):
         self.desc_textbox.delete("1.0", "end")
         self.desc_textbox.insert("1.0", profile["description"])
 
-        # Оновлення списку груп
+        # Рендер вкладок
+        self._render_game_badges(profile["gameBadgesResult"])
         self._render_groups(profile["groups"])
-
-        # Оновлення минулих нікнеймів
         self._render_past_names(profile["pastNames"])
+        self._render_roblox_badges(profile["robloxBadges"])
 
-        # Оновлення бейджів
-        self._render_badges(profile["badges"])
+    def _join_player_game(self):
+        """Launches Roblox client directly or opens game webpage to join player."""
+        if not self.current_profile_data:
+            return
+
+        pres = self.current_profile_data.get("presence", {})
+        place_id = pres.get("placeId")
+        game_id = pres.get("gameId")
+
+        if place_id:
+            # Спроба запустити нативний клієнт Roblox через протокол
+            if game_id:
+                protocol_url = f"roblox://experiences/start?placeId={place_id}&gameInstanceId={game_id}"
+            else:
+                protocol_url = f"roblox://placeId={place_id}"
+
+            try:
+                # Запуск протоколу roblox:// у Windows
+                os.startfile(protocol_url)
+                self.status_lbl.configure(text=f"🚀 Запускаю клієнт Roblox (Place ID: {place_id})...", text_color="#10b981")
+            except Exception:
+                # Якщо протокол не відкрився, відкриваємо вебсторінку гри
+                web_url = f"https://www.roblox.com/games/{place_id}"
+                webbrowser.open(web_url)
+                self.status_lbl.configure(text=f"🌐 Відкрито сторінку гри у браузері", text_color="#38bdf8")
+        else:
+            self.status_lbl.configure(
+                text="ℹ️ У гравця вимкнено можливість приєднання (Join) або приховано Place ID у налаштуваннях приватності.",
+                text_color="#f59e0b"
+            )
+
+    def _render_game_badges(self, result: dict):
+        for widget in self.game_badges_scroll.winfo_children():
+            widget.destroy()
+
+        if not result.get("success"):
+            error_msg = result.get("error", "Не вдалося отримати досягнення")
+            err_box = ctk.CTkFrame(self.game_badges_scroll, corner_radius=10, fg_color="#261b1b", border_width=1, border_color="#7f1d1d")
+            err_box.pack(fill="x", padx=10, pady=20)
+
+            ctk.CTkLabel(
+                err_box,
+                text="🔒 Потрібна авторизація для отримання досягнень з ігор",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#f87171"
+            ).pack(anchor="w", padx=14, pady=(12, 4))
+
+            ctk.CTkLabel(
+                err_box,
+                text=f"{error_msg}\n\nНатисніть кнопку ⚙️ (вгорі праворуч) та додайте .ROBLOSECURITY cookie, щоб переглядати всі нагороди.",
+                font=ctk.CTkFont(size=12),
+                text_color="#cbd5e1",
+                justify="left"
+            ).pack(anchor="w", padx=14, pady=(0, 12))
+            return
+
+        badges = result.get("badges", [])
+        if not badges:
+            lbl = ctk.CTkLabel(self.game_badges_scroll, text="У користувача немає ігрових досягнень або інвентар прихований.", text_color="#64748b")
+            lbl.pack(pady=30)
+            return
+
+        header = ctk.CTkLabel(
+            self.game_badges_scroll,
+            text=f"🏆 Досягнення з різних ігор Roblox (Знайдено: {len(badges)}):",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#38bdf8"
+        )
+        header.pack(anchor="w", padx=10, pady=(6, 8))
+
+        for b in badges:
+            card = ctk.CTkFrame(self.game_badges_scroll, corner_radius=8, fg_color="#1e293b", border_width=1, border_color="#334155")
+            card.pack(fill="x", padx=6, pady=4)
+            card.grid_columnconfigure(0, weight=1)
+
+            b_name = ctk.CTkLabel(card, text=f"🏆 {b.get('name')}", font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8", anchor="w")
+            b_name.grid(row=0, column=0, padx=12, pady=(6, 2), sticky="w")
+
+            awarder = b.get("awarder", "Гра Roblox")
+            desc = b.get("description") or "Опис відсутній"
+            info_text = f"Гра/Творець: {awarder}\n{desc}"
+
+            b_desc = ctk.CTkLabel(card, text=info_text, font=ctk.CTkFont(size=11), text_color="#94a3b8", wraplength=560, justify="left", anchor="w")
+            b_desc.grid(row=1, column=0, padx=12, pady=(0, 6), sticky="w")
 
     def _render_groups(self, groups: list):
         for widget in self.groups_scroll.winfo_children():
@@ -366,20 +539,20 @@ class RBXDetectiveApp(ctk.CTk):
             lbl = ctk.CTkLabel(row_frame, text=f"#{idx}  {name}", font=ctk.CTkFont(size=13, weight="bold"), text_color="#e2e8f0")
             lbl.pack(anchor="w", padx=12, pady=6)
 
-    def _render_badges(self, badges: list):
-        for widget in self.badges_scroll.winfo_children():
+    def _render_roblox_badges(self, badges: list):
+        for widget in self.roblox_badges_scroll.winfo_children():
             widget.destroy()
 
         if not badges:
-            lbl = ctk.CTkLabel(self.badges_scroll, text="Офіційних бейджів не знайдено", text_color="#64748b")
+            lbl = ctk.CTkLabel(self.roblox_badges_scroll, text="Офіційних бейджів не знайдено", text_color="#64748b")
             lbl.pack(pady=30)
             return
 
-        header = ctk.CTkLabel(self.badges_scroll, text=f"Офіційні нагороди Roblox ({len(badges)}):", font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8")
+        header = ctk.CTkLabel(self.roblox_badges_scroll, text=f"Офіційні нагороди Roblox ({len(badges)}):", font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8")
         header.pack(anchor="w", padx=10, pady=(6, 8))
 
         for b in badges:
-            card = ctk.CTkFrame(self.badges_scroll, corner_radius=8, fg_color="#1e293b", border_width=1, border_color="#334155")
+            card = ctk.CTkFrame(self.roblox_badges_scroll, corner_radius=8, fg_color="#1e293b", border_width=1, border_color="#334155")
             card.pack(fill="x", padx=6, pady=4)
             card.grid_columnconfigure(0, weight=1)
 
