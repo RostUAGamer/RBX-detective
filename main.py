@@ -1,7 +1,7 @@
 """
 RBX Detective - Головний застосунок (CustomTkinter GUI)
 Зручний та сучасний інтерфейс для аналізу гравців Roblox.
-Підтримує локалізацію (Українська, English, Deutsch, 中文),
+Повна багатомовність (Українська, English, Deutsch, 中文),
 приєднання до гри та перегляд ігрових досягнень із cookie-авторизацією.
 """
 import os
@@ -196,17 +196,30 @@ class RBXDetectiveApp(ctk.CTk):
         )
         self.tabview.grid(row=0, column=1, padx=(8, 14), pady=14, sticky="nsew")
 
-        self.tab_info = self.tabview.add(I18n.t("tab_profile"))
-        self.tab_game_badges = self.tabview.add(I18n.t("tab_game_badges"))
-        self.tab_groups = self.tabview.add(I18n.t("tab_groups"))
-        self.tab_past_names = self.tabview.add(I18n.t("tab_past_names"))
-        self.tab_roblox_badges = self.tabview.add(I18n.t("tab_roblox_badges"))
+        # Використовуємо постійні стабільні ключі для вкладок
+        self.TAB_KEYS = ["tab_profile", "tab_game_badges", "tab_groups", "tab_past_names", "tab_roblox_badges"]
+
+        self.tab_info = self.tabview.add("tab_profile")
+        self.tab_game_badges = self.tabview.add("tab_game_badges")
+        self.tab_groups = self.tabview.add("tab_groups")
+        self.tab_past_names = self.tabview.add("tab_past_names")
+        self.tab_roblox_badges = self.tabview.add("tab_roblox_badges")
+
+        self._refresh_tab_headers()
 
         self._setup_info_tab()
         self._setup_game_badges_tab()
         self._setup_groups_tab()
         self._setup_past_names_tab()
         self._setup_roblox_badges_tab()
+
+    def _refresh_tab_headers(self):
+        """Updates text on the tab buttons according to current language."""
+        if hasattr(self.tabview, "_segmented_button"):
+            for key in self.TAB_KEYS:
+                if key in self.tabview._segmented_button._buttons_dict:
+                    btn = self.tabview._segmented_button._buttons_dict[key]
+                    btn.configure(text=I18n.t(key))
 
     def _setup_info_tab(self):
         self.tab_info.grid_columnconfigure(0, weight=1)
@@ -282,7 +295,6 @@ class RBXDetectiveApp(ctk.CTk):
         self.roblox_badges_placeholder.pack(pady=40)
 
     def _open_settings_dialog(self):
-        """Settings modal dialog with Language Selection and Roblox Cookie tabs."""
         dialog = ctk.CTkToplevel(self)
         dialog.title(I18n.t("settings_title"))
         dialog.geometry("560x420")
@@ -326,7 +338,6 @@ class RBXDetectiveApp(ctk.CTk):
 
         def on_lang_change():
             selected = lang_combo.get()
-            # Extract code from parentheses
             code = selected.split("(")[-1].replace(")", "").strip()
             if code in LANGUAGES:
                 I18n.set_language(code)
@@ -396,21 +407,48 @@ class RBXDetectiveApp(ctk.CTk):
         clear_btn.pack(side="left")
 
     def _apply_language_change(self):
-        """Refreshes all static text and re-renders current profile in the newly selected language."""
+        """Refreshes all static text, tab headers, and re-renders profile."""
         self.title(I18n.t("app_title"))
         self.search_entry.configure(placeholder_text=I18n.t("search_placeholder"))
         self.search_btn.configure(text=I18n.t("search_btn"))
         self.open_profile_btn.configure(text=I18n.t("btn_open_profile"))
         self.desc_title.configure(text=I18n.t("bio_title"))
 
+        # Оновлення заголовків вкладок
+        self._refresh_tab_headers()
+
+        # Оновлення підписів карток
         for key, lbl in self.stat_title_labels.items():
             lbl.configure(text=I18n.t(key))
 
         if self.current_profile_data:
-            # Re-fetch or update existing profile UI
-            self._update_ui_with_profile(self.current_profile_data, self.current_avatar_image)
+            # Оновлюємо розрахунок віку під нову мову
+            raw_details = self.current_profile_data
+            created_str = raw_details.get("rawCreated", "")
+            if created_str:
+                from datetime import datetime
+                try:
+                    dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                    now = datetime.now(dt.tzinfo)
+                    diff = now - dt
+                    years = diff.days // 365
+                    remaining_days = diff.days % 365
+                    if years > 0:
+                        raw_details["accountAge"] = I18n.t("years_days_ago", years=years, days=remaining_days)
+                    else:
+                        raw_details["accountAge"] = I18n.t("days_ago", days=diff.days)
+                except Exception:
+                    pass
+
+            self._update_ui_with_profile(raw_details, self.current_avatar_image)
         else:
             self.status_lbl.configure(text=I18n.t("status_initial"))
+            self.game_badges_placeholder.configure(text=I18n.t("game_badges_empty"))
+            self.groups_placeholder.configure(text=I18n.t("groups_empty"))
+            self.past_names_placeholder.configure(text=I18n.t("past_names_empty"))
+            self.roblox_badges_placeholder.configure(text=I18n.t("roblox_badges_empty"))
+            self.join_game_btn.configure(text=I18n.t("btn_player_not_ingame"))
+            self.presence_badge.configure(text=f"● {I18n.t('offline')}")
 
     def start_search(self):
         query = self.search_entry.get().strip()
@@ -458,9 +496,17 @@ class RBXDetectiveApp(ctk.CTk):
 
         # Онлайн статус та кнопка Join Game
         pres = profile["presence"]
-        self.presence_badge.configure(text=f"● {pres['status']}", fg_color=pres["color"])
+        ptype = pres.get("presenceType", 0)
+        type_names = {
+            0: I18n.t("offline"),
+            1: I18n.t("online_site"),
+            2: I18n.t("in_game"),
+            3: I18n.t("in_studio")
+        }
+        status_text = type_names.get(ptype, I18n.t("offline"))
+        self.presence_badge.configure(text=f"● {status_text}", fg_color=pres["color"])
 
-        if pres["presenceType"] == 2:  # In-Game
+        if ptype == 2:  # In-Game
             game_title = pres.get("gameName") or "Roblox Experience"
             self.game_info_lbl.configure(text=I18n.t("in_game_label", game_title=game_title))
             self.join_game_btn.configure(state="normal", text=I18n.t("btn_join_game"))
