@@ -2,11 +2,13 @@
 Roblox API Service for RBX Detective.
 Retrieves comprehensive player information from official Roblox APIs.
 Supports custom Roblox Cookie (.ROBLOSECURITY) for game badges & private queries.
+Integrates with I18n for multi-language status and date formatting.
 """
 import os
 import requests
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from i18n import I18n
 
 
 class RobloxAPI:
@@ -101,21 +103,19 @@ class RobloxAPI:
                 presences = resp.json().get("userPresences", [])
                 if presences:
                     p = presences[0]
-                    # 0: Offline, 1: Online, 2: InGame, 3: InStudio
                     type_map = {
-                        0: ("Offline", "#80848e"),
-                        1: ("Online (Website)", "#23a55a"),
-                        2: ("In-Game", "#5865f2"),
-                        3: ("In Studio", "#f0b232")
+                        0: (I18n.t("offline"), "#80848e"),
+                        1: (I18n.t("online_site"), "#23a55a"),
+                        2: (I18n.t("in_game"), "#5865f2"),
+                        3: (I18n.t("in_studio"), "#f0b232")
                     }
                     ptype = p.get("userPresenceType", 0)
-                    status_str, color = type_map.get(ptype, ("Unknown", "#80848e"))
+                    status_str, color = type_map.get(ptype, (I18n.t("offline"), "#80848e"))
                     
                     place_id = p.get("placeId")
-                    game_id = p.get("gameId") # Job ID / Server instance
+                    game_id = p.get("gameId")
                     game_name = p.get("lastLocation", "")
 
-                    # If in game and we have a placeId, get rich game information
                     if place_id:
                         g_info = cls.get_game_details_by_place(place_id)
                         if g_info:
@@ -135,7 +135,7 @@ class RobloxAPI:
             pass
         return {
             "presenceType": 0,
-            "status": "Offline",
+            "status": I18n.t("offline"),
             "color": "#80848e",
             "gameName": "",
             "placeId": None,
@@ -239,9 +239,8 @@ class RobloxAPI:
     @classmethod
     def get_game_badges(cls, user_id: int, limit: int = 50) -> Dict[str, Any]:
         """
-        Fetches user badges won from all Roblox games/experiences.
-        Requires authentication cookie (.ROBLOSECURITY) according to Roblox Badges API v1.
-        Returns {'success': bool, 'badges': list, 'needs_auth': bool, 'error': str}
+        Fetches user badges won from Roblox games.
+        Requires authentication cookie (.ROBLOSECURITY).
         """
         url = f"https://badges.roblox.com/v1/users/{user_id}/badges?limit={limit}&sortOrder=Desc"
         try:
@@ -254,7 +253,7 @@ class RobloxAPI:
                         "id": b.get("id"),
                         "name": b.get("name"),
                         "description": b.get("description", ""),
-                        "awarder": b.get("awarder", {}).get("name", "Гра Roblox"),
+                        "awarder": b.get("awarder", {}).get("name", "Roblox"),
                         "created": b.get("created")
                     })
                 return {"success": True, "badges": formatted_badges, "needs_auth": False, "error": None}
@@ -263,32 +262,28 @@ class RobloxAPI:
                     "success": False,
                     "badges": [],
                     "needs_auth": True,
-                    "error": "Roblox API вимагає авторизації (.ROBLOSECURITY cookie) для перегляду бейджів з ігор."
+                    "error": "Roblox API requires authentication (.ROBLOSECURITY cookie) to view game badges."
                 }
             elif resp.status_code == 403:
                 return {
                     "success": False,
                     "badges": [],
                     "needs_auth": False,
-                    "error": "Інвентар або бейджі цього гравця приховані налаштуваннями приватності."
+                    "error": "User inventory or badges are hidden by privacy settings."
                 }
             else:
                 return {
                     "success": False,
                     "badges": [],
                     "needs_auth": False,
-                    "error": f"Сервер повернув код {resp.status_code}."
+                    "error": f"HTTP {resp.status_code}"
                 }
         except Exception as e:
             return {"success": False, "badges": [], "needs_auth": False, "error": str(e)}
 
     @classmethod
     def fetch_full_profile(cls, query: str) -> Dict[str, Any]:
-        """
-        Coordinates full data fetching.
-        query can be a numeric user_id or a username string.
-        """
-        # Ensure saved cookie is active
+        """Coordinates full data fetching."""
         cls.load_saved_cookie()
 
         user_basic = None
@@ -297,14 +292,13 @@ class RobloxAPI:
         else:
             user_basic = cls.get_user_by_name(query)
             if not user_basic:
-                raise ValueError(f"Користувача '{query}' не знайдено на Roblox.")
+                raise ValueError(f"User '{query}' not found.")
 
         uid = user_basic["id"]
         details = cls.get_user_details(uid)
         if not details:
-            raise ValueError(f"Не вдалося завантажити інформацію про гравця з ID {uid}.")
+            raise ValueError(f"Unable to load profile data for ID {uid}.")
 
-        # Parse date and age
         created_str = details.get("created", "")
         formatted_date = created_str
         age_str = ""
@@ -317,9 +311,9 @@ class RobloxAPI:
                 years = diff.days // 365
                 remaining_days = diff.days % 365
                 if years > 0:
-                    age_str = f"{years} р. {remaining_days} дн. тому"
+                    age_str = I18n.t("years_days_ago", years=years, days=remaining_days)
                 else:
-                    age_str = f"{diff.days} дн. тому"
+                    age_str = I18n.t("days_ago", days=diff.days)
             except Exception:
                 pass
 
@@ -331,11 +325,16 @@ class RobloxAPI:
         roblox_badges = cls.get_roblox_badges(uid)
         game_badges_result = cls.get_game_badges(uid)
 
+        desc = details.get("description")
+        if not desc:
+            desc = I18n.t("no_description")
+
         return {
             "id": uid,
             "username": details.get("name"),
             "displayName": details.get("displayName"),
-            "description": details.get("description") or "(Опис відсутній)",
+            "description": desc,
+            "rawDescription": details.get("description"),
             "isBanned": details.get("isBanned", False),
             "hasVerifiedBadge": details.get("hasVerifiedBadge", False),
             "createdDate": formatted_date,
