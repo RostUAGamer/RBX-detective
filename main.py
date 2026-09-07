@@ -1,8 +1,7 @@
 """
 RBX Detective - Головний застосунок (CustomTkinter GUI)
-Зручний та сучасний інтерфейс для аналізу гравців Roblox.
-Повна багатомовність (Українська, English, Deutsch, 中文),
-приєднання до гри та перегляд ігрових досягнень із cookie-авторизацією.
+100% публічні відкриті API Roblox без жодних cookies або .ROBLOSECURITY.
+Підтримує перемикання мов, приєднання до гри та перегляд бейджей ігор (Badges API).
 """
 import os
 import threading
@@ -24,9 +23,8 @@ class RBXDetectiveApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        # Завантажуємо налаштування мови та cookie
+        # Завантажуємо налаштування мови
         I18n.load_config()
-        RobloxAPI.load_saved_cookie()
 
         self.title(I18n.t("app_title"))
         self.geometry("1020x760")
@@ -41,7 +39,7 @@ class RBXDetectiveApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # 1. Верхня панель пошуку + Налаштування
+        # 1. Верхня панель пошуку + Налаштування мови
         search_frame = ctk.CTkFrame(self, corner_radius=14, fg_color="#181b22", border_width=1, border_color="#272d38")
         search_frame.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
         search_frame.grid_columnconfigure(1, weight=1)
@@ -81,14 +79,14 @@ class RBXDetectiveApp(ctk.CTk):
 
         self.settings_btn = ctk.CTkButton(
             search_frame,
-            text="⚙️",
-            font=ctk.CTkFont(size=16),
+            text="🌐 ⚙️",
+            font=ctk.CTkFont(size=14, weight="bold"),
             height=40,
-            width=40,
+            width=50,
             corner_radius=10,
             fg_color="#334155",
             hover_color="#475569",
-            command=self._open_settings_dialog
+            command=self._open_language_dialog
         )
         self.settings_btn.grid(row=0, column=3, padx=(0, 16), pady=12)
 
@@ -196,7 +194,6 @@ class RBXDetectiveApp(ctk.CTk):
         )
         self.tabview.grid(row=0, column=1, padx=(8, 14), pady=14, sticky="nsew")
 
-        # Використовуємо постійні стабільні ключі для вкладок
         self.TAB_KEYS = ["tab_profile", "tab_game_badges", "tab_groups", "tab_past_names", "tab_roblox_badges"]
 
         self.tab_info = self.tabview.add("tab_profile")
@@ -294,47 +291,36 @@ class RBXDetectiveApp(ctk.CTk):
         self.roblox_badges_placeholder = ctk.CTkLabel(self.roblox_badges_scroll, text=I18n.t("roblox_badges_empty"), text_color="#64748b")
         self.roblox_badges_placeholder.pack(pady=40)
 
-    def _open_settings_dialog(self):
+    def _open_language_dialog(self):
+        """Clean modal dialog for language selection."""
         dialog = ctk.CTkToplevel(self)
         dialog.title(I18n.t("settings_title"))
-        dialog.geometry("560x420")
+        dialog.geometry("400x240")
         dialog.resizable(False, False)
         dialog.attributes("-topmost", True)
 
-        settings_tabs = ctk.CTkTabview(
-            dialog,
-            corner_radius=12,
-            segmented_button_selected_color="#0284c7",
-            segmented_button_selected_hover_color="#0369a1"
-        )
-        settings_tabs.pack(fill="both", expand=True, padx=16, pady=16)
-
-        tab_lang = settings_tabs.add(I18n.t("settings_tab_lang"))
-        tab_cookie = settings_tabs.add(I18n.t("settings_tab_cookie"))
-
-        # --- Вкладка 1: Мова (Language) ---
         lang_title = ctk.CTkLabel(
-            tab_lang,
-            text=I18n.t("select_language"),
-            font=ctk.CTkFont(size=14, weight="bold"),
+            dialog,
+            text=f"🌐 {I18n.t('select_language')}",
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color="#38bdf8"
         )
-        lang_title.pack(anchor="w", padx=16, pady=(16, 12))
+        lang_title.pack(anchor="w", padx=24, pady=(24, 14))
 
         lang_options = [f"{name} ({code})" for code, name in LANGUAGES.items()]
         curr_code = I18n.current_lang
         curr_display = f"{LANGUAGES.get(curr_code, 'English')} ({curr_code})"
 
         lang_combo = ctk.CTkComboBox(
-            tab_lang,
+            dialog,
             values=lang_options,
-            width=280,
-            height=38,
+            width=350,
+            height=40,
             font=ctk.CTkFont(size=14),
             state="readonly"
         )
         lang_combo.set(curr_display)
-        lang_combo.pack(anchor="w", padx=16, pady=(0, 20))
+        lang_combo.pack(padx=24, pady=(0, 24))
 
         def on_lang_change():
             selected = lang_combo.get()
@@ -345,66 +331,16 @@ class RBXDetectiveApp(ctk.CTk):
                 self._apply_language_change()
 
         lang_save_btn = ctk.CTkButton(
-            tab_lang,
+            dialog,
             text=I18n.t("btn_save"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             fg_color="#10b981",
             hover_color="#059669",
+            height=38,
             width=140,
             command=on_lang_change
         )
-        lang_save_btn.pack(anchor="w", padx=16)
-
-        # --- Вкладка 2: Roblox Cookie (.ROBLOSECURITY) ---
-        cookie_title = ctk.CTkLabel(
-            tab_cookie,
-            text=I18n.t("cookie_title"),
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#38bdf8"
-        )
-        cookie_title.pack(anchor="w", padx=16, pady=(16, 6))
-
-        cookie_desc = ctk.CTkLabel(
-            tab_cookie,
-            text=I18n.t("cookie_desc"),
-            font=ctk.CTkFont(size=11),
-            text_color="#94a3b8",
-            justify="left"
-        )
-        cookie_desc.pack(anchor="w", padx=16, pady=(0, 10))
-
-        cookie_entry = ctk.CTkEntry(
-            tab_cookie,
-            placeholder_text=I18n.t("cookie_placeholder"),
-            width=480,
-            show="•"
-        )
-        cookie_entry.pack(padx=16, pady=10)
-
-        saved = RobloxAPI.load_saved_cookie()
-        if saved:
-            cookie_entry.insert(0, saved)
-
-        btn_box = ctk.CTkFrame(tab_cookie, fg_color="transparent")
-        btn_box.pack(padx=16, pady=15, anchor="w")
-
-        def save_cookie():
-            c_val = cookie_entry.get().strip()
-            if c_val:
-                RobloxAPI.set_cookie(c_val)
-                self.status_lbl.configure(text=I18n.t("status_cookie_saved"), text_color="#10b981")
-            dialog.destroy()
-
-        def clear_cookie():
-            RobloxAPI.clear_cookie()
-            cookie_entry.delete(0, "end")
-            self.status_lbl.configure(text=I18n.t("status_cookie_cleared"), text_color="#94a3b8")
-            dialog.destroy()
-
-        save_btn = ctk.CTkButton(btn_box, text=I18n.t("btn_save"), fg_color="#10b981", hover_color="#059669", width=120, command=save_cookie)
-        save_btn.pack(side="left", padx=(0, 10))
-
-        clear_btn = ctk.CTkButton(btn_box, text=I18n.t("btn_clear"), fg_color="#ef4444", hover_color="#dc2626", width=120, command=clear_cookie)
-        clear_btn.pack(side="left")
+        lang_save_btn.pack(padx=24, anchor="e")
 
     def _apply_language_change(self):
         """Refreshes all static text, tab headers, and re-renders profile."""
@@ -414,15 +350,12 @@ class RBXDetectiveApp(ctk.CTk):
         self.open_profile_btn.configure(text=I18n.t("btn_open_profile"))
         self.desc_title.configure(text=I18n.t("bio_title"))
 
-        # Оновлення заголовків вкладок
         self._refresh_tab_headers()
 
-        # Оновлення підписів карток
         for key, lbl in self.stat_title_labels.items():
             lbl.configure(text=I18n.t(key))
 
         if self.current_profile_data:
-            # Оновлюємо розрахунок віку під нову мову
             raw_details = self.current_profile_data
             created_str = raw_details.get("rawCreated", "")
             if created_str:
@@ -531,7 +464,7 @@ class RBXDetectiveApp(ctk.CTk):
         self.desc_textbox.insert("1.0", desc_text)
 
         # Рендер вкладок
-        self._render_game_badges(profile["gameBadgesResult"])
+        self._render_created_games_badges(profile["createdGamesBadges"])
         self._render_groups(profile["groups"])
         self._render_past_names(profile["pastNames"])
         self._render_roblox_badges(profile["robloxBadges"])
@@ -563,32 +496,10 @@ class RBXDetectiveApp(ctk.CTk):
                 text_color="#f59e0b"
             )
 
-    def _render_game_badges(self, result: dict):
+    def _render_created_games_badges(self, badges: list):
         for widget in self.game_badges_scroll.winfo_children():
             widget.destroy()
 
-        if not result.get("success"):
-            err_box = ctk.CTkFrame(self.game_badges_scroll, corner_radius=10, fg_color="#261b1b", border_width=1, border_color="#7f1d1d")
-            err_box.pack(fill="x", padx=10, pady=20)
-
-            ctk.CTkLabel(
-                err_box,
-                text=I18n.t("game_badges_auth_title"),
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#f87171"
-            ).pack(anchor="w", padx=14, pady=(12, 4))
-
-            error_msg = result.get("error", "")
-            ctk.CTkLabel(
-                err_box,
-                text=I18n.t("game_badges_auth_desc", error=error_msg),
-                font=ctk.CTkFont(size=12),
-                text_color="#cbd5e1",
-                justify="left"
-            ).pack(anchor="w", padx=14, pady=(0, 12))
-            return
-
-        badges = result.get("badges", [])
         if not badges:
             lbl = ctk.CTkLabel(self.game_badges_scroll, text=I18n.t("game_badges_empty"), text_color="#64748b")
             lbl.pack(pady=30)
@@ -610,9 +521,9 @@ class RBXDetectiveApp(ctk.CTk):
             b_name = ctk.CTkLabel(card, text=f"🏆 {b.get('name')}", font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8", anchor="w")
             b_name.grid(row=0, column=0, padx=12, pady=(6, 2), sticky="w")
 
-            awarder = b.get("awarder", "Roblox")
+            game_name = b.get("gameName", "Roblox")
             desc = b.get("description") or ""
-            info_text = I18n.t("game_creator_prefix", awarder=awarder, desc=desc)
+            info_text = I18n.t("game_creator_prefix", gameName=game_name, desc=desc)
 
             b_desc = ctk.CTkLabel(card, text=info_text, font=ctk.CTkFont(size=11), text_color="#94a3b8", wraplength=560, justify="left", anchor="w")
             b_desc.grid(row=1, column=0, padx=12, pady=(0, 6), sticky="w")

@@ -6,12 +6,15 @@
 
 ## 🇺🇦 Українська
 
-Сучасна десктопна програма на Python та **CustomTkinter** для отримання повної інформації, аналітики, ігрових досягнень та швидкого приєднання до гри будь-якого гравця Roblox.
+Сучасна десктопна програма на Python та **CustomTkinter** для отримання повної інформації, аналітики, публічних бейджей та швидкого приєднання до гри будь-якого гравця Roblox.
+**100% безпечно: працює виключно через публічні відкриті API Roblox (жодних cookies, паролів чи .ROBLOSECURITY).**
 
 ### ⚡ Можливості
-- **🌐 Мультимовність**: Повна підтримка Української, Англійської, Німецької та Китайської мов із можливістю перемикання в меню налаштувань (⚙️).
+- **🌐 Мультимовність**: Повна підтримка Української, Англійської, Німецької та Китайської мов (кнопка 🌐 ⚙️).
 - **🎮 Приєднання до гри (Join Game)**: Запуск клієнта Roblox або сторінки гри для підключення до сервера гравця.
-- **🏆 Досягнення з різних ігор (Game Badges)**: Перегляд нагород, здобутих користувачем у різних іграх Roblox із підтримкою `.ROBLOSECURITY` cookie.
+- **🏆 Публічні бейджі (Badges API)**:
+  - Офіційні бейджі платформи Roblox (Veteran, Homestead, Administrator тощо).
+  - Бейджі, створені користувачем для своїх ігор через офіційний відкритий `badges.roblox.com/v1/universes/{id}/badges`.
 - **👤 Досьє профілю**: User ID, системний нікнейм, Display Name, статус верифікації, бан-статус, дата реєстрації, точний вік акаунта та біографія.
 - **🟢 Онлайн статус**: Офлайн, на сайті, у грі або в Roblox Studio в реальному часі.
 - **🖼️ Аватар**: Відображення фото аватара у високій роздільній здатності.
@@ -29,16 +32,19 @@ python main.py
 
 ## 🇬🇧 English
 
-Modern desktop intelligence application for Roblox built with Python and **CustomTkinter**. Inspect player profiles, trace game achievements, and join ongoing games.
+Modern desktop intelligence application for Roblox built with Python and **CustomTkinter**. Inspect player profiles, explore badges, and join ongoing games.
+**100% Safe & Public: operates strictly through open Roblox APIs without any cookies, passwords, or .ROBLOSECURITY.**
 
 ### ⚡ Features
-- **🌐 Multi-Language Support**: Seamlessly switch between Ukrainian, English, German, and Chinese in the Settings dialog (⚙️).
+- **🌐 Multi-Language Support**: Seamlessly switch between Ukrainian, English, German, and Chinese via the 🌐 ⚙️ button.
 - **🎮 Join Ongoing Game**: Directly launch the native Roblox desktop client into the player's game server or view experience details.
-- **🏆 Game Badges & Achievements**: Browse all badges awarded across diverse Roblox experiences with `.ROBLOSECURITY` cookie support.
+- **🏆 Public Badges API**:
+  - Official Roblox platform awards (Veteran, Homestead, Administrator, etc.).
+  - Experience badges created for games by the user via public `badges.roblox.com/v1/universes/{id}/badges`.
 - **👤 Comprehensive Profile**: User ID, Username, Display Name, verification status, ban status, registration date, calculated account age, and bio.
 - **🟢 Real-Time Presence**: Instant indicators for Offline, Online (Website), In-Game, or Studio activity.
 - **🖼️ Avatar Display**: High-resolution avatar render.
-- **📊 Socials & Groups**: Track friends, followers, following counts, past username history, and group memberships with roles & member counts.
+- **📊 Socials & Groups**: Track friends, followers, following counts, past username history, and group memberships.
 
 ### 🚀 Installation & Running
 ```bash
@@ -52,12 +58,13 @@ python main.py
 
 ## 🇩🇪 Deutsch
 
-Moderne Desktop-Anwendung zur Analyse von Roblox-Spielern, entwickelt mit Python und **CustomTkinter**. Spielerprofile prüfen, Spielabzeichen ansehen und laufenden Spielen beitreten.
+Moderne Desktop-Anwendung zur Analyse von Roblox-Spielern, entwickelt mit Python und **CustomTkinter**.
+**100% öffentlich und sicher: funktioniert ausschließlich über offene Roblox-Web-APIs ohne Cookies oder .ROBLOSECURITY.**
 
 ### ⚡ Funktionen
-- **🌐 Mehrsprachigkeit**: Vollständige Unterstützung für Ukrainisch, Englisch, Deutsch und Chinesisch in den Einstellungen (⚙️).
+- **🌐 Mehrsprachigkeit**: Vollständige Unterstützung für Ukrainisch, Englisch, Deutsch und Chinesisch (🌐 ⚙️).
 - **🎮 Spiel beitreten (Join Game)**: Startet den nativen Roblox-Client direkt auf dem Server des Spielers.
-- **🏆 Spiel-Abzeichen & Erfolge**: Durchsuchen Sie Abzeichen aus verschiedenen Roblox-Erlebnissen mit `.ROBLOSECURITY`-Cookie-Unterstützung.
+- **🏆 Öffentliche Badges-API**: Offizielle Roblox-Auszeichnungen und erstelle Spielabzeichen über `badges.roblox.com`.
 - **👤 Umfassendes Spielerprofil**: Benutzer-ID, Benutzername, Anzeigename, Verifizierungsstatus, Sperrstatus, Registrierungsdatum, Kontoalter und Biografie.
 - **🟢 Echtzeit-Präsenz**: Status für Offline, Website-Aktivität, Im Spiel oder Studio.
 - **🖼️ Avatar-Vorschau**: Hochauflösendes Spieler-Avatarbild.
@@ -75,12 +82,13 @@ python main.py
 
 ## 🇨🇳 中文
 
-基于 Python 和 **CustomTkinter** 构建的现代 Roblox 玩家信息分析与追踪桌面工具。支持查看详细资料、游戏徽章及快速加入玩家所在的游戏。
+基于 Python 和 **CustomTkinter** 构建的现代 Roblox 玩家信息分析与追踪桌面工具。
+**100% 安全与公开：完全依赖 Roblox 开放公共 Web API，绝不需要任何 Cookie、密码或 .ROBLOSECURITY。**
 
 ### ⚡ 功能特点
-- **🌐 多语言支持**: 在设置面板 (⚙️) 中随时切换乌克兰语、英语、德语和中文。
+- **🌐 多语言支持**: 随时切换乌克兰语、英语、德语和中文（通过 🌐 ⚙️ 按钮）。
 - **🎮 加入游戏 (Join Game)**: 一键启动 Roblox 客户端并直接加入玩家所在的游戏服务器。
-- **🏆 跨游戏徽章与成就**: 浏览玩家在不同 Roblox 游戏中获得的各类徽章（支持通过 ⚙️ 配置 `.ROBLOSECURITY` cookie）。
+- **🏆 公开徽章接口 (Badges API)**: 查看官方 Roblox 荣誉勋章及通过公开接口 `badges.roblox.com` 获取的游戏徽章。
 - **👤 完整玩家档案**: 用户 ID、系统用户名、显示名称、官方认证标识、封禁状态、注册时间、账号年龄及个人简介。
 - **🟢 实时在线状态**: 实时显示离线、网页在线、游戏中及 Studio 开发状态。
 - **🖼️ 高清头像**: 加载并展示玩家当前高清头像。

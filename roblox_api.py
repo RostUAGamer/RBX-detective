@@ -1,10 +1,8 @@
 """
 Roblox API Service for RBX Detective.
-Retrieves comprehensive player information from official Roblox APIs.
-Supports custom Roblox Cookie (.ROBLOSECURITY) for game badges & private queries.
-Integrates with I18n for multi-language status and date formatting.
+Retrieves 100% public player information from official Roblox APIs.
+No .ROBLOSECURITY, tokens, or cookies required.
 """
-import os
 import requests
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -12,50 +10,11 @@ from i18n import I18n
 
 
 class RobloxAPI:
-    COOKIE_FILE = "roblox_cookie.txt"
     SESSION = requests.Session()
     SESSION.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
     })
-
-    @classmethod
-    def load_saved_cookie(cls) -> Optional[str]:
-        """Loads saved .ROBLOSECURITY cookie if available."""
-        if os.path.exists(cls.COOKIE_FILE):
-            try:
-                with open(cls.COOKIE_FILE, "r", encoding="utf-8") as f:
-                    cookie = f.read().strip()
-                    if cookie:
-                        cls.set_cookie(cookie)
-                        return cookie
-            except Exception:
-                pass
-        return None
-
-    @classmethod
-    def set_cookie(cls, cookie: str):
-        """Sets the .ROBLOSECURITY cookie in the session and saves to file."""
-        clean_cookie = cookie.strip()
-        if clean_cookie.startswith(".ROBLOSECURITY="):
-            clean_cookie = clean_cookie.replace(".ROBLOSECURITY=", "", 1).strip()
-        
-        cls.SESSION.cookies.set(".ROBLOSECURITY", clean_cookie, domain=".roblox.com")
-        try:
-            with open(cls.COOKIE_FILE, "w", encoding="utf-8") as f:
-                f.write(clean_cookie)
-        except Exception:
-            pass
-
-    @classmethod
-    def clear_cookie(cls):
-        """Removes the stored cookie."""
-        cls.SESSION.cookies.clear()
-        if os.path.exists(cls.COOKIE_FILE):
-            try:
-                os.remove(cls.COOKIE_FILE)
-            except Exception:
-                pass
 
     @classmethod
     def get_user_by_name(cls, username: str) -> Optional[Dict[str, Any]]:
@@ -226,7 +185,10 @@ class RobloxAPI:
 
     @classmethod
     def get_roblox_badges(cls, user_id: int) -> list:
-        """Fetch official Roblox badges (Veteran, Homestead, Administrator, etc.)."""
+        """
+        Fetch official Roblox badges (Veteran, Homestead, Administrator, etc.)
+        100% public, works without any authentication.
+        """
         url = f"https://accountinformation.roblox.com/v1/users/{user_id}/roblox-badges"
         try:
             resp = cls.SESSION.get(url, timeout=10)
@@ -237,55 +199,41 @@ class RobloxAPI:
         return []
 
     @classmethod
-    def get_game_badges(cls, user_id: int, limit: int = 50) -> Dict[str, Any]:
+    def get_created_games_badges(cls, user_id: int, max_games: int = 6) -> list:
         """
-        Fetches user badges won from Roblox games.
-        Requires authentication cookie (.ROBLOSECURITY).
+        Public Badges API integration (badges.roblox.com):
+        Fetches public games created by the user and retrieves all badges created for those games
+        via https://badges.roblox.com/v1/universes/{universeId}/badges (100% public, no cookie).
         """
-        url = f"https://badges.roblox.com/v1/users/{user_id}/badges?limit={limit}&sortOrder=Desc"
+        badges_found = []
         try:
-            resp = cls.SESSION.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json().get("data", [])
-                formatted_badges = []
-                for b in data:
-                    formatted_badges.append({
-                        "id": b.get("id"),
-                        "name": b.get("name"),
-                        "description": b.get("description", ""),
-                        "awarder": b.get("awarder", {}).get("name", "Roblox"),
-                        "created": b.get("created")
-                    })
-                return {"success": True, "badges": formatted_badges, "needs_auth": False, "error": None}
-            elif resp.status_code == 401:
-                return {
-                    "success": False,
-                    "badges": [],
-                    "needs_auth": True,
-                    "error": "Roblox API requires authentication (.ROBLOSECURITY cookie) to view game badges."
-                }
-            elif resp.status_code == 403:
-                return {
-                    "success": False,
-                    "badges": [],
-                    "needs_auth": False,
-                    "error": "User inventory or badges are hidden by privacy settings."
-                }
-            else:
-                return {
-                    "success": False,
-                    "badges": [],
-                    "needs_auth": False,
-                    "error": f"HTTP {resp.status_code}"
-                }
-        except Exception as e:
-            return {"success": False, "badges": [], "needs_auth": False, "error": str(e)}
+            games_url = f"https://games.roblox.com/v2/users/{user_id}/games?accessFilter=Public&limit={max_games}&sortOrder=Desc"
+            g_resp = cls.SESSION.get(games_url, timeout=10)
+            if g_resp.status_code == 200:
+                games = g_resp.json().get("data", [])
+                for game in games:
+                    universe_id = game.get("id")
+                    game_name = game.get("name", "Roblox Experience")
+                    if universe_id:
+                        b_url = f"https://badges.roblox.com/v1/universes/{universe_id}/badges?limit=25&sortOrder=Desc"
+                        b_resp = cls.SESSION.get(b_url, timeout=6)
+                        if b_resp.status_code == 200:
+                            b_data = b_resp.json().get("data", [])
+                            for b in b_data:
+                                badges_found.append({
+                                    "id": b.get("id"),
+                                    "name": b.get("name"),
+                                    "description": b.get("description", ""),
+                                    "gameName": game_name,
+                                    "enabled": b.get("enabled", True)
+                                })
+        except Exception:
+            pass
+        return badges_found
 
     @classmethod
     def fetch_full_profile(cls, query: str) -> Dict[str, Any]:
-        """Coordinates full data fetching."""
-        cls.load_saved_cookie()
-
+        """Coordinates 100% public data fetching."""
         user_basic = None
         if query.isdigit():
             user_basic = {"id": int(query)}
@@ -323,7 +271,7 @@ class RobloxAPI:
         past_names = cls.get_past_usernames(uid)
         groups = cls.get_groups(uid)
         roblox_badges = cls.get_roblox_badges(uid)
-        game_badges_result = cls.get_game_badges(uid)
+        created_games_badges = cls.get_created_games_badges(uid)
 
         desc = details.get("description")
         if not desc:
@@ -335,6 +283,7 @@ class RobloxAPI:
             "displayName": details.get("displayName"),
             "description": desc,
             "rawDescription": details.get("description"),
+            "rawCreated": created_str,
             "isBanned": details.get("isBanned", False),
             "hasVerifiedBadge": details.get("hasVerifiedBadge", False),
             "createdDate": formatted_date,
@@ -345,6 +294,6 @@ class RobloxAPI:
             "pastNames": past_names,
             "groups": groups,
             "robloxBadges": roblox_badges,
-            "gameBadgesResult": game_badges_result,
+            "createdGamesBadges": created_games_badges,
             "profileUrl": f"https://www.roblox.com/users/{uid}/profile"
         }
