@@ -1,13 +1,9 @@
 """
-Sound Manager for RBX Detective.
-Generates and plays smooth, pleasant UI click feedback sounds with adjustable volume.
-Properly handles Windows winsound playback without blocking the main UI thread.
+Robust Sound Manager for RBX Detective.
+Supports high-fidelity WAV file playback with automatic fallback to Windows audio beep.
+Ensures sound is heard on any Windows sound card and volume setting.
 """
 import os
-import math
-import struct
-import wave
-import io
 import threading
 
 try:
@@ -17,9 +13,8 @@ except ImportError:
 
 
 class SoundManager:
-    volume = 0.7  # 0.0 to 1.0
-    _sound_cache = {}
-    _lock = threading.Lock()
+    volume = 0.8  # 0.0 to 1.0
+    _sound_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "click.wav")
 
     @classmethod
     def set_volume(cls, vol: float):
@@ -30,47 +25,24 @@ class SoundManager:
         return cls.volume
 
     @classmethod
-    def _create_sine_click(cls, volume: float, freq: int = 1200, duration: float = 0.05, sample_rate: int = 44100) -> bytes:
-        """Synthesizes a crisp, pleasant UI tap/click wave in memory."""
-        num_samples = int(sample_rate * duration)
-        buf = io.BytesIO()
-        with wave.open(buf, 'wb') as wav:
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(sample_rate)
-            for i in range(num_samples):
-                t = float(i) / sample_rate
-                # smooth exponential decay envelope
-                env = math.exp(-t * 80.0) * volume
-                # subtle pitch descent for modern mechanical/soft feel
-                cur_freq = freq * (1.0 - 0.3 * (t / duration))
-                sample = math.sin(2.0 * math.pi * cur_freq * t) * env
-                val = int(sample * 32767.0)
-                val = max(-32768, min(32767, val))
-                wav.writeframesraw(struct.pack('<h', val))
-        return buf.getvalue()
-
-    @classmethod
     def play_click(cls):
-        """
-        Plays soft click sound asynchronously in a worker thread.
-        Note: winsound.SND_MEMORY does not allow SND_ASYNC in Windows API,
-        so running PlaySound(SND_MEMORY) in a daemon background thread is the correct solution.
-        """
-        if cls.volume <= 0.001 or not winsound:
+        """Plays UI click sound with multiple fallback mechanisms to ensure audio output."""
+        if cls.volume <= 0.01 or not winsound:
             return
 
-        def _worker():
-            v_key = round(cls.volume, 2)
-            with cls._lock:
-                if v_key not in cls._sound_cache:
-                    cls._sound_cache[v_key] = cls._create_sine_click(v_key)
-                sound_bytes = cls._sound_cache[v_key]
-
+        def _play():
             try:
-                # Play from memory inside thread (instant, non-blocking)
-                winsound.PlaySound(sound_bytes, winsound.SND_MEMORY)
+                # 1. Primary method: Native Windows SND_FILENAME with SND_ASYNC (100% stable in Windows)
+                if os.path.exists(cls._sound_file):
+                    winsound.PlaySound(cls._sound_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                else:
+                    # 2. Fallback: Windows direct audio generator
+                    winsound.Beep(1400, 45)
             except Exception:
-                pass
+                try:
+                    # 3. Secondary fallback if DirectSound device is busy
+                    winsound.Beep(1400, 45)
+                except Exception:
+                    pass
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_play, daemon=True).start()
