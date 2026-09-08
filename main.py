@@ -1,9 +1,13 @@
 """
 RBX Detective - Головний застосунок (CustomTkinter GUI)
-100% публічні відкриті API Roblox без жодних cookies або .ROBLOSECURITY.
-Підтримує перемикання мов, приєднання до гри та перегляд бейджей ігор (Badges API).
+- 100% публічні відкриті API Roblox
+- Красива фірмова іконка вікна та панелі завдань Windows (Taskbar icon)
+- Приємні плавні переходи (Smooth transitions) між усіма вкладками
+- Приємний аудіо-зворотний зв'язок (Sound feedback) при натисканні кнопок
+- Налаштування мови та повзунок регулювання гучності звуку
 """
 import os
+import ctypes
 import threading
 import webbrowser
 from io import BytesIO
@@ -13,33 +17,63 @@ import requests
 
 from roblox_api import RobloxAPI
 from i18n import I18n, LANGUAGES
+from sound_manager import SoundManager
 
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# Встановлюємо AppUserModelID для Windows, щоб панель завдань показувала саме нашу іконку програми
+try:
+    myappid = 'roblox.detective.app.v1.4'
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except Exception:
+    pass
 
 
 class RBXDetectiveApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        # Завантажуємо налаштування мови
-        I18n.load_config()
+        # Завантажуємо налаштування мови та звуку
+        lang, vol = I18n.load_config()
+        SoundManager.set_volume(vol)
 
         self.title(I18n.t("app_title"))
         self.geometry("1020x760")
         self.minsize(920, 660)
 
+        # Встановлюємо гарну іконку для вікна та панелі завдань
+        self._setup_window_icon()
+
         self.current_avatar_image = None
         self.current_profile_data = None
 
+        # Керування плавними переходами між вкладками
+        self.is_animating_tab = False
+
         self._init_ui()
+
+    def _setup_window_icon(self):
+        """Sets window and taskbar icons using icon.ico and icon.png."""
+        try:
+            if os.path.exists("icon.ico"):
+                self.iconbitmap("icon.ico")
+            elif os.path.exists("icon.png"):
+                icon_img = Image.open("icon.png")
+                self.wm_iconphoto(True, ImageTk.PhotoImage(icon_img))
+        except Exception:
+            pass
+
+    def _play_click(self):
+        """Helper to trigger soft button sound feedback."""
+        SoundManager.play_click()
 
     def _init_ui(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # 1. Верхня панель пошуку + Налаштування мови
+        # 1. Верхня панель пошуку + Налаштування
         search_frame = ctk.CTkFrame(self, corner_radius=14, fg_color="#181b22", border_width=1, border_color="#272d38")
         search_frame.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
         search_frame.grid_columnconfigure(1, weight=1)
@@ -62,7 +96,7 @@ class RBXDetectiveApp(ctk.CTk):
             fg_color="#0f172a"
         )
         self.search_entry.grid(row=0, column=1, padx=(0, 10), pady=12, sticky="ew")
-        self.search_entry.bind("<Return>", lambda event: self.start_search())
+        self.search_entry.bind("<Return>", lambda event: (self._play_click(), self.start_search()))
 
         self.search_btn = ctk.CTkButton(
             search_frame,
@@ -73,20 +107,20 @@ class RBXDetectiveApp(ctk.CTk):
             corner_radius=10,
             fg_color="#0284c7",
             hover_color="#0369a1",
-            command=self.start_search
+            command=self._on_search_clicked
         )
         self.search_btn.grid(row=0, column=2, padx=(0, 10), pady=12)
 
         self.settings_btn = ctk.CTkButton(
             search_frame,
-            text="🌐 ⚙️",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            text="⚙️",
+            font=ctk.CTkFont(size=16, weight="bold"),
             height=40,
-            width=50,
+            width=45,
             corner_radius=10,
             fg_color="#334155",
             hover_color="#475569",
-            command=self._open_language_dialog
+            command=self._on_settings_clicked
         )
         self.settings_btn.grid(row=0, column=3, padx=(0, 16), pady=12)
 
@@ -108,6 +142,14 @@ class RBXDetectiveApp(ctk.CTk):
 
         self._build_left_profile_panel()
         self._build_right_tabview()
+
+    def _on_search_clicked(self):
+        self._play_click()
+        self.start_search()
+
+    def _on_settings_clicked(self):
+        self._play_click()
+        self._open_settings_dialog()
 
     def _build_left_profile_panel(self):
         self.left_card = ctk.CTkFrame(self.main_content, corner_radius=14, fg_color="#1c212b", border_width=1, border_color="#2b3240")
@@ -167,7 +209,7 @@ class RBXDetectiveApp(ctk.CTk):
             hover_color="#059669",
             corner_radius=8,
             state="disabled",
-            command=self._join_player_game
+            command=self._on_join_game_clicked
         )
         self.join_game_btn.grid(row=5, column=0, padx=20, pady=(4, 6), sticky="ew")
 
@@ -179,9 +221,17 @@ class RBXDetectiveApp(ctk.CTk):
             fg_color="#2563eb",
             hover_color="#1d4ed8",
             corner_radius=8,
-            command=self._open_roblox_profile
+            command=self._on_open_profile_clicked
         )
         self.open_profile_btn.grid(row=6, column=0, padx=20, pady=(4, 16), sticky="ew")
+
+    def _on_join_game_clicked(self):
+        self._play_click()
+        self._join_player_game()
+
+    def _on_open_profile_clicked(self):
+        self._play_click()
+        self._open_roblox_profile()
 
     def _build_right_tabview(self):
         self.tabview = ctk.CTkTabview(
@@ -190,7 +240,8 @@ class RBXDetectiveApp(ctk.CTk):
             fg_color="#1c212b",
             segmented_button_selected_color="#0284c7",
             segmented_button_selected_hover_color="#0369a1",
-            segmented_button_unselected_color="#0f172a"
+            segmented_button_unselected_color="#0f172a",
+            command=self._on_tab_switched
         )
         self.tabview.grid(row=0, column=1, padx=(8, 14), pady=14, sticky="nsew")
 
@@ -202,6 +253,14 @@ class RBXDetectiveApp(ctk.CTk):
         self.tab_past_names = self.tabview.add("tab_past_names")
         self.tab_roblox_badges = self.tabview.add("tab_roblox_badges")
 
+        self.tab_frames = {
+            "tab_profile": self.tab_info,
+            "tab_game_badges": self.tab_game_badges,
+            "tab_groups": self.tab_groups,
+            "tab_past_names": self.tab_past_names,
+            "tab_roblox_badges": self.tab_roblox_badges
+        }
+
         self._refresh_tab_headers()
 
         self._setup_info_tab()
@@ -209,6 +268,37 @@ class RBXDetectiveApp(ctk.CTk):
         self._setup_groups_tab()
         self._setup_past_names_tab()
         self._setup_roblox_badges_tab()
+
+    def _on_tab_switched(self):
+        """Triggered on tab change: plays soft click and applies smooth transition animation."""
+        self._play_click()
+        current_tab_key = self.tabview.get()
+        target_tab = self.tab_frames.get(current_tab_key)
+        if target_tab and not self.is_animating_tab:
+            self._animate_tab_fade_in(target_tab)
+
+    def _animate_tab_fade_in(self, target_frame):
+        """Smooth quick slide/fade-in effect for tab content."""
+        self.is_animating_tab = True
+        
+        # Micro animation step: slightly fade colors from background to active
+        colors = ["#14171f", "#171a24", "#1a1e28", "#1c212b"]
+        
+        def _step(idx):
+            if idx < len(colors):
+                try:
+                    target_frame.configure(fg_color=colors[idx])
+                except Exception:
+                    pass
+                self.after(16, _step, idx + 1)
+            else:
+                try:
+                    target_frame.configure(fg_color="#1c212b")
+                except Exception:
+                    pass
+                self.is_animating_tab = False
+
+        _step(0)
 
     def _refresh_tab_headers(self):
         """Updates text on the tab buttons according to current language."""
@@ -291,56 +381,118 @@ class RBXDetectiveApp(ctk.CTk):
         self.roblox_badges_placeholder = ctk.CTkLabel(self.roblox_badges_scroll, text=I18n.t("roblox_badges_empty"), text_color="#64748b")
         self.roblox_badges_placeholder.pack(pady=40)
 
-    def _open_language_dialog(self):
-        """Clean modal dialog for language selection."""
+    def _open_settings_dialog(self):
+        """Unified Settings Dialog with Language selector and Sound volume slider."""
         dialog = ctk.CTkToplevel(self)
         dialog.title(I18n.t("settings_title"))
-        dialog.geometry("400x240")
+        dialog.geometry("460x340")
         dialog.resizable(False, False)
         dialog.attributes("-topmost", True)
 
+        try:
+            if os.path.exists("icon.ico"):
+                dialog.iconbitmap("icon.ico")
+        except Exception:
+            pass
+
+        content_box = ctk.CTkFrame(dialog, corner_radius=12, fg_color="#181b22", border_width=1, border_color="#272d38")
+        content_box.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # 1. Секція мови
         lang_title = ctk.CTkLabel(
-            dialog,
+            content_box,
             text=f"🌐 {I18n.t('select_language')}",
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#38bdf8"
         )
-        lang_title.pack(anchor="w", padx=24, pady=(24, 14))
+        lang_title.pack(anchor="w", padx=20, pady=(16, 8))
 
         lang_options = [f"{name} ({code})" for code, name in LANGUAGES.items()]
         curr_code = I18n.current_lang
         curr_display = f"{LANGUAGES.get(curr_code, 'English')} ({curr_code})"
 
         lang_combo = ctk.CTkComboBox(
-            dialog,
+            content_box,
             values=lang_options,
-            width=350,
-            height=40,
+            width=380,
+            height=38,
             font=ctk.CTkFont(size=14),
             state="readonly"
         )
         lang_combo.set(curr_display)
-        lang_combo.pack(padx=24, pady=(0, 24))
+        lang_combo.pack(padx=20, pady=(0, 16))
 
-        def on_lang_change():
+        # 2. Секція звуку (Повзунок гучності)
+        vol_title_frame = ctk.CTkFrame(content_box, fg_color="transparent")
+        vol_title_frame.pack(fill="x", padx=20, pady=(0, 4))
+
+        vol_lbl = ctk.CTkLabel(
+            vol_title_frame,
+            text=f"🔊 {I18n.t('sound_volume_label')}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#38bdf8"
+        )
+        vol_lbl.pack(side="left")
+
+        current_vol_pct = int(SoundManager.get_volume() * 100)
+        vol_val_lbl = ctk.CTkLabel(
+            vol_title_frame,
+            text=f"{current_vol_pct}%" if current_vol_pct > 0 else I18n.t("sound_muted"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#a5b4fc"
+        )
+        vol_val_lbl.pack(side="right")
+
+        def on_slider_move(val):
+            SoundManager.set_volume(val)
+            pct = int(val * 100)
+            vol_val_lbl.configure(text=f"{pct}%" if pct > 0 else I18n.t("sound_muted"))
+
+        def on_slider_release(event):
+            # Test play click sound on release
+            self._play_click()
+
+        vol_slider = ctk.CTkSlider(
+            content_box,
+            from_=0.0,
+            to=1.0,
+            number_of_steps=20,
+            width=380,
+            height=18,
+            progress_color="#0284c7",
+            button_color="#38bdf8",
+            button_hover_color="#7dd3fc",
+            command=on_slider_move
+        )
+        vol_slider.set(SoundManager.get_volume())
+        vol_slider.bind("<ButtonRelease-1>", on_slider_release)
+        vol_slider.pack(padx=20, pady=(4, 20))
+
+        # 3. Кнопка збереження
+        def save_and_close():
+            self._play_click()
             selected = lang_combo.get()
             code = selected.split("(")[-1].replace(")", "").strip()
             if code in LANGUAGES:
                 I18n.set_language(code)
-                dialog.destroy()
-                self._apply_language_change()
+            I18n.set_volume(vol_slider.get())
+            dialog.destroy()
+            self._apply_language_change()
 
-        lang_save_btn = ctk.CTkButton(
-            dialog,
+        btn_box = ctk.CTkFrame(content_box, fg_color="transparent")
+        btn_box.pack(fill="x", padx=20, pady=(0, 16))
+
+        save_btn = ctk.CTkButton(
+            btn_box,
             text=I18n.t("btn_save"),
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             fg_color="#10b981",
             hover_color="#059669",
-            height=38,
-            width=140,
-            command=on_lang_change
+            height=36,
+            width=130,
+            command=save_and_close
         )
-        lang_save_btn.pack(padx=24, anchor="e")
+        save_btn.pack(side="right")
 
     def _apply_language_change(self):
         """Refreshes all static text, tab headers, and re-renders profile."""

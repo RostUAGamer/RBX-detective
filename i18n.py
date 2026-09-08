@@ -18,7 +18,7 @@ TRANSLATIONS = {
         "app_title": "RBX Detective — Roblox Player Intel & Tracker",
         "search_placeholder": "Введіть нікнейм або User ID гравця Roblox...",
         "search_btn": "Знайти",
-        "settings_btn_tooltip": "Налаштування мови",
+        "settings_btn_tooltip": "Налаштування програми",
         "status_initial": "Введіть нікнейм або ID гравця та натисніть «Знайти»",
         "status_searching": "⏳ Отримую дані для «{query}» з серверів Roblox...",
         "status_empty_query": "⚠️ Будь ласка, введіть нікнейм або ID!",
@@ -62,8 +62,10 @@ TRANSLATIONS = {
         "game_badges_header": "🏆 Бейджі ігор користувача ({count}):",
         "game_badges_empty": "У гравця немає публічних ігор зі створеними бейджами (або бейджі приховано).",
         "game_creator_prefix": "Гра: {gameName}\n{desc}",
-        "settings_title": "Налаштування мови",
-        "select_language": "Оберіть мову інтерфейсу:",
+        "settings_title": "Налаштування програми",
+        "select_language": "Мова інтерфейсу:",
+        "sound_volume_label": "Гучність звуку кнопок:",
+        "sound_muted": "Вимкнено (0%)",
         "btn_save": "Зберегти",
         "years_days_ago": "{years} р. {days} дн. тому",
         "days_ago": "{days} дн. тому"
@@ -72,7 +74,7 @@ TRANSLATIONS = {
         "app_title": "RBX Detective — Roblox Player Intel & Tracker",
         "search_placeholder": "Enter Roblox player username or User ID...",
         "search_btn": "Search",
-        "settings_btn_tooltip": "Language Settings",
+        "settings_btn_tooltip": "Settings",
         "status_initial": "Enter player username or ID and press «Search»",
         "status_searching": "⏳ Fetching data for «{query}» from Roblox servers...",
         "status_empty_query": "⚠️ Please enter a username or ID!",
@@ -116,8 +118,10 @@ TRANSLATIONS = {
         "game_badges_header": "🏆 User's Game Badges ({count}):",
         "game_badges_empty": "User has no public games with created badges.",
         "game_creator_prefix": "Game: {gameName}\n{desc}",
-        "settings_title": "Language Settings",
-        "select_language": "Choose interface language:",
+        "settings_title": "Application Settings",
+        "select_language": "Interface Language:",
+        "sound_volume_label": "Button Sound Volume:",
+        "sound_muted": "Muted (0%)",
         "btn_save": "Save",
         "years_days_ago": "{years} yrs {days} days ago",
         "days_ago": "{days} days ago"
@@ -126,7 +130,7 @@ TRANSLATIONS = {
         "app_title": "RBX Detective — Roblox Spieler-Info & Tracker",
         "search_placeholder": "Roblox-Benutzernamen oder User-ID eingeben...",
         "search_btn": "Suchen",
-        "settings_btn_tooltip": "Spracheinstellungen",
+        "settings_btn_tooltip": "Programmeinstellungen",
         "status_initial": "Geben Sie einen Namen oder eine ID ein und drücken Sie «Suchen»",
         "status_searching": "⏳ Daten für «{query}» werden von Roblox-Servern geladen...",
         "status_empty_query": "⚠️ Bitte geben Sie einen Benutzernamen oder eine ID ein!",
@@ -170,8 +174,10 @@ TRANSLATIONS = {
         "game_badges_header": "🏆 Spielabzeichen des Benutzers ({count}):",
         "game_badges_empty": "Benutzer hat keine öffentlichen Spiele mit erstellten Abzeichen.",
         "game_creator_prefix": "Spiel: {gameName}\n{desc}",
-        "settings_title": "Spracheinstellungen",
-        "select_language": "Wählen Sie die Benutzeroberflächensprache:",
+        "settings_title": "Programmeinstellungen",
+        "select_language": "Sprache auswählen:",
+        "sound_volume_label": "Lautstärke für Tastentöne:",
+        "sound_muted": "Stumm (0%)",
         "btn_save": "Speichern",
         "years_days_ago": "vor {years} J. {days} T.",
         "days_ago": "vor {days} T."
@@ -180,7 +186,7 @@ TRANSLATIONS = {
         "app_title": "RBX Detective — Roblox 玩家信息与追踪器",
         "search_placeholder": "输入 Roblox 玩家用户名或用户 ID...",
         "search_btn": "搜索",
-        "settings_btn_tooltip": "语言设置",
+        "settings_btn_tooltip": "程序设置",
         "status_initial": "输入玩家用户名或 ID，然后点击“搜索”",
         "status_searching": "⏳ 正在从 Roblox 服务器获取“{query}”的数据...",
         "status_empty_query": "⚠️ 请输入用户名或 ID！",
@@ -224,8 +230,10 @@ TRANSLATIONS = {
         "game_badges_header": "🏆 玩家游戏徽章 ({count}):",
         "game_badges_empty": "用户没有带有公开徽章的游戏。",
         "game_creator_prefix": "游戏: {gameName}\n{desc}",
-        "settings_title": "语言设置",
-        "select_language": "选择界面语言:",
+        "settings_title": "程序设置",
+        "select_language": "界面语言:",
+        "sound_volume_label": "按键提示音量:",
+        "sound_muted": "静音 (0%)",
         "btn_save": "保存",
         "years_days_ago": "{years} 年 {days} 天前",
         "days_ago": "{days} 天前"
@@ -237,6 +245,7 @@ CONFIG_FILE = "config.json"
 
 class I18n:
     current_lang = "uk"
+    volume = 0.7
 
     @classmethod
     def load_config(cls):
@@ -245,24 +254,35 @@ class I18n:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
                     cls.current_lang = cfg.get("language", "uk")
+                    cls.volume = float(cfg.get("sound_volume", 0.7))
             except Exception:
                 pass
-        return cls.current_lang
+        return cls.current_lang, cls.volume
 
     @classmethod
     def set_language(cls, lang_code: str):
         if lang_code in TRANSLATIONS:
             cls.current_lang = lang_code
-            try:
-                cfg = {}
-                if os.path.exists(CONFIG_FILE):
-                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                        cfg = json.load(f)
-                cfg["language"] = lang_code
-                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(cfg, f, indent=4)
-            except Exception:
-                pass
+            cls._save_config()
+
+    @classmethod
+    def set_volume(cls, vol: float):
+        cls.volume = max(0.0, min(1.0, float(vol)))
+        cls._save_config()
+
+    @classmethod
+    def _save_config(cls):
+        try:
+            cfg = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            cfg["language"] = cls.current_lang
+            cfg["sound_volume"] = round(cls.volume, 2)
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=4)
+        except Exception:
+            pass
 
     @classmethod
     def t(cls, key: str, **kwargs) -> str:
