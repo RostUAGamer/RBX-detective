@@ -223,7 +223,31 @@ class RBXDetectiveApp(ctk.CTk):
             corner_radius=8,
             command=self._on_open_profile_clicked
         )
-        self.open_profile_btn.grid(row=6, column=0, padx=20, pady=(4, 16), sticky="ew")
+        self.open_profile_btn.grid(row=6, column=0, padx=20, pady=(4, 8), sticky="ew")
+
+        # --- Кнопка: Випадковий гравець ---
+        self.random_player_btn = ctk.CTkButton(
+            self.left_card,
+            text=I18n.t("btn_random_player"),
+            font=ctk.CTkFont(size=12),
+            fg_color="#7c3aed",
+            hover_color="#6d28d9",
+            corner_radius=8,
+            command=self._on_random_player_clicked
+        )
+        self.random_player_btn.grid(row=7, column=0, padx=20, pady=(0, 6), sticky="ew")
+
+        # --- Кнопка: Знайти гравця з Joinable ---
+        self.joinable_player_btn = ctk.CTkButton(
+            self.left_card,
+            text=I18n.t("btn_random_joinable"),
+            font=ctk.CTkFont(size=12),
+            fg_color="#059669",
+            hover_color="#047857",
+            corner_radius=8,
+            command=self._on_joinable_player_clicked
+        )
+        self.joinable_player_btn.grid(row=8, column=0, padx=20, pady=(0, 16), sticky="ew")
 
     def _on_join_game_clicked(self):
         self._play_click()
@@ -232,6 +256,89 @@ class RBXDetectiveApp(ctk.CTk):
     def _on_open_profile_clicked(self):
         self._play_click()
         self._open_roblox_profile()
+
+    def _on_random_player_clicked(self):
+        self._play_click()
+        self.status_lbl.configure(text=I18n.t("status_searching_random"), text_color="#a78bfa")
+        self.random_player_btn.configure(state="disabled")
+        self.joinable_player_btn.configure(state="disabled")
+        self.search_btn.configure(state="disabled")
+        threading.Thread(target=self._random_player_worker, daemon=True).start()
+
+    def _on_joinable_player_clicked(self):
+        self._play_click()
+        self.status_lbl.configure(text=I18n.t("status_searching_joinable"), text_color="#34d399")
+        self.random_player_btn.configure(state="disabled")
+        self.joinable_player_btn.configure(state="disabled")
+        self.search_btn.configure(state="disabled")
+        threading.Thread(target=self._joinable_player_worker, daemon=True).start()
+
+    def _random_player_worker(self):
+        try:
+            user_data = RobloxAPI.find_random_player()
+            if user_data:
+                username = user_data.get("name", str(user_data.get("id", "")))
+                self.after(0, lambda: self._load_player_by_id(user_data["id"]))
+            else:
+                self.after(0, self._re_enable_buttons)
+        except Exception as e:
+            self.after(0, self._re_enable_buttons)
+
+    def _joinable_player_worker(self):
+        try:
+            profile = RobloxAPI.find_joinable_player(max_candidates=60)
+            if profile:
+                avatar_image = None
+                if profile.get("avatarUrl"):
+                    try:
+                        img_resp = requests.get(profile["avatarUrl"], timeout=6)
+                        if img_resp.status_code == 200:
+                            pil_img = Image.open(BytesIO(img_resp.content)).convert("RGBA")
+                            avatar_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(130, 130))
+                    except Exception:
+                        pass
+                self.after(0, self._update_ui_with_profile, profile, avatar_image)
+                self.after(0, self._re_enable_buttons)
+            else:
+                self.after(0, lambda: self.status_lbl.configure(
+                    text=I18n.t("status_no_joinable"), text_color="#f59e0b"
+                ))
+                self.after(0, self._re_enable_buttons)
+        except Exception as e:
+            self.after(0, self._re_enable_buttons)
+
+    def _load_player_by_id(self, user_id: int):
+        """Load full profile for a given user ID (used after random player search)."""
+        self.search_btn.configure(state="disabled")
+        threading.Thread(
+            target=self._search_worker_by_id,
+            args=(user_id,),
+            daemon=True
+        ).start()
+
+    def _search_worker_by_id(self, user_id: int):
+        try:
+            profile = RobloxAPI.fetch_full_profile(str(user_id))
+            avatar_image = None
+            if profile.get("avatarUrl"):
+                try:
+                    img_resp = requests.get(profile["avatarUrl"], timeout=6)
+                    if img_resp.status_code == 200:
+                        pil_img = Image.open(BytesIO(img_resp.content)).convert("RGBA")
+                        avatar_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(130, 130))
+                except Exception:
+                    pass
+            self.after(0, self._update_ui_with_profile, profile, avatar_image)
+            self.after(0, self._re_enable_buttons)
+        except Exception as e:
+            self.after(0, self._show_error, str(e))
+            self.after(0, self._re_enable_buttons)
+
+    def _re_enable_buttons(self):
+        """Re-enables all action buttons after an async operation completes."""
+        self.search_btn.configure(state="normal")
+        self.random_player_btn.configure(state="normal")
+        self.joinable_player_btn.configure(state="normal")
 
     def _build_right_tabview(self):
         self.tabview = ctk.CTkTabview(
@@ -245,20 +352,22 @@ class RBXDetectiveApp(ctk.CTk):
         )
         self.tabview.grid(row=0, column=1, padx=(8, 14), pady=14, sticky="nsew")
 
-        self.TAB_KEYS = ["tab_profile", "tab_game_badges", "tab_groups", "tab_past_names", "tab_roblox_badges"]
+        self.TAB_KEYS = ["tab_profile", "tab_game_badges", "tab_groups", "tab_past_names", "tab_roblox_badges", "tab_compare"]
 
         self.tab_info = self.tabview.add("tab_profile")
         self.tab_game_badges = self.tabview.add("tab_game_badges")
         self.tab_groups = self.tabview.add("tab_groups")
         self.tab_past_names = self.tabview.add("tab_past_names")
         self.tab_roblox_badges = self.tabview.add("tab_roblox_badges")
+        self.tab_compare = self.tabview.add("tab_compare")
 
         self.tab_frames = {
             "tab_profile": self.tab_info,
             "tab_game_badges": self.tab_game_badges,
             "tab_groups": self.tab_groups,
             "tab_past_names": self.tab_past_names,
-            "tab_roblox_badges": self.tab_roblox_badges
+            "tab_roblox_badges": self.tab_roblox_badges,
+            "tab_compare": self.tab_compare
         }
 
         self._refresh_tab_headers()
@@ -268,6 +377,7 @@ class RBXDetectiveApp(ctk.CTk):
         self._setup_groups_tab()
         self._setup_past_names_tab()
         self._setup_roblox_badges_tab()
+        self._setup_compare_tab()
 
     def _on_tab_switched(self):
         """Triggered on tab change: plays soft click and applies smooth transition animation."""
@@ -380,6 +490,406 @@ class RBXDetectiveApp(ctk.CTk):
         self.roblox_badges_scroll.pack(fill="both", expand=True, padx=6, pady=6)
         self.roblox_badges_placeholder = ctk.CTkLabel(self.roblox_badges_scroll, text=I18n.t("roblox_badges_empty"), text_color="#64748b")
         self.roblox_badges_placeholder.pack(pady=40)
+
+    def _setup_compare_tab(self):
+        """Build the side-by-side account comparison tab."""
+        self.tab_compare.grid_columnconfigure(0, weight=1)
+        self.tab_compare.grid_rowconfigure(1, weight=1)
+
+        # ── Search bar ───────────────────────────────────────────────────────
+        search_row = ctk.CTkFrame(self.tab_compare, fg_color="#0f172a", corner_radius=10,
+                                  border_width=1, border_color="#272f3d")
+        search_row.grid(row=0, column=0, padx=6, pady=(8, 4), sticky="ew")
+        search_row.grid_columnconfigure(0, weight=1)
+        search_row.grid_columnconfigure(1, weight=1)
+
+        self.cmp_entry1 = ctk.CTkEntry(
+            search_row, placeholder_text=I18n.t("cmp_player1_placeholder"),
+            font=ctk.CTkFont(size=13), height=36, corner_radius=8,
+            border_color="#334155", fg_color="#0b0f17"
+        )
+        self.cmp_entry1.grid(row=0, column=0, padx=(10, 4), pady=8, sticky="ew")
+        self.cmp_entry1.bind("<Return>", lambda e: self._on_compare_clicked())
+
+        self.cmp_entry2 = ctk.CTkEntry(
+            search_row, placeholder_text=I18n.t("cmp_player2_placeholder"),
+            font=ctk.CTkFont(size=13), height=36, corner_radius=8,
+            border_color="#334155", fg_color="#0b0f17"
+        )
+        self.cmp_entry2.grid(row=0, column=1, padx=(4, 4), pady=8, sticky="ew")
+        self.cmp_entry2.bind("<Return>", lambda e: self._on_compare_clicked())
+
+        self.cmp_btn = ctk.CTkButton(
+            search_row, text=I18n.t("cmp_btn_compare"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=36, width=110, corner_radius=8,
+            fg_color="#0284c7", hover_color="#0369a1",
+            command=self._on_compare_clicked
+        )
+        self.cmp_btn.grid(row=0, column=2, padx=(4, 6), pady=8)
+
+        self.cmp_export_btn = ctk.CTkButton(
+            search_row, text=I18n.t("cmp_btn_export"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=36, width=90, corner_radius=8,
+            fg_color="#7c3aed", hover_color="#6d28d9",
+            state="disabled",
+            command=self._on_compare_export_clicked
+        )
+        self.cmp_export_btn.grid(row=0, column=3, padx=(0, 10), pady=8)
+
+        # ── Results area ────────────────────────────────────────────────────
+        self.cmp_result_frame = ctk.CTkScrollableFrame(
+            self.tab_compare, corner_radius=10, fg_color="#111620"
+        )
+        self.cmp_result_frame.grid(row=1, column=0, padx=6, pady=(4, 6), sticky="nsew")
+        self.cmp_result_frame.grid_columnconfigure(0, weight=1)
+        self.cmp_result_frame.grid_columnconfigure(1, weight=1)
+
+        self.cmp_status_lbl = ctk.CTkLabel(
+            self.cmp_result_frame,
+            text=I18n.t("cmp_hint"),
+            text_color="#64748b",
+            font=ctk.CTkFont(size=13),
+            justify="center"
+        )
+        self.cmp_status_lbl.grid(row=0, column=0, columnspan=2, pady=40)
+
+        # Store compare results for export
+        self._cmp_profiles = None
+
+    def _on_compare_clicked(self):
+        self._play_click()
+        n1 = self.cmp_entry1.get().strip()
+        n2 = self.cmp_entry2.get().strip()
+        if not n1 or not n2:
+            self.cmp_status_lbl.configure(text=I18n.t("cmp_error_empty"), text_color="#f59e0b")
+            return
+        if n1.lower() == n2.lower():
+            self.cmp_status_lbl.configure(text=I18n.t("cmp_error_same"), text_color="#f59e0b")
+            return
+
+        self._clear_compare_results()
+        self.cmp_status_lbl.configure(text=I18n.t("cmp_searching", p1=n1, p2=n2), text_color="#38bdf8")
+        self.cmp_status_lbl.grid(row=0, column=0, columnspan=2, pady=40)
+        self.cmp_btn.configure(state="disabled")
+        self.cmp_export_btn.configure(state="disabled")
+
+        threading.Thread(target=self._compare_worker, args=(n1, n2), daemon=True).start()
+
+    def _clear_compare_results(self):
+        for w in self.cmp_result_frame.winfo_children():
+            w.destroy()
+        self.cmp_status_lbl = ctk.CTkLabel(
+            self.cmp_result_frame, text="", text_color="#64748b",
+            font=ctk.CTkFont(size=13), justify="center"
+        )
+        self.cmp_status_lbl.grid(row=0, column=0, columnspan=2, pady=40)
+        self._cmp_profiles = None
+
+    def _compare_worker(self, name1: str, name2: str):
+        errors = []
+        p1, p2 = None, None
+
+        try:
+            p1 = RobloxAPI.fetch_full_profile(name1)
+        except Exception as e:
+            errors.append(f"{name1}: {e}")
+
+        try:
+            p2 = RobloxAPI.fetch_full_profile(name2)
+        except Exception as e:
+            errors.append(f"{name2}: {e}")
+
+        # Fetch avatars
+        av1, av2 = None, None
+        if p1 and p1.get("avatarUrl"):
+            try:
+                r = requests.get(p1["avatarUrl"], timeout=6)
+                if r.status_code == 200:
+                    img = Image.open(BytesIO(r.content)).convert("RGBA")
+                    av1 = ctk.CTkImage(light_image=img, dark_image=img, size=(100, 100))
+            except Exception:
+                pass
+        if p2 and p2.get("avatarUrl"):
+            try:
+                r = requests.get(p2["avatarUrl"], timeout=6)
+                if r.status_code == 200:
+                    img = Image.open(BytesIO(r.content)).convert("RGBA")
+                    av2 = ctk.CTkImage(light_image=img, dark_image=img, size=(100, 100))
+            except Exception:
+                pass
+
+        self.after(0, self._render_compare_results, p1, p2, av1, av2, errors)
+
+    def _render_compare_results(self, p1, p2, av1, av2, errors):
+        self.cmp_btn.configure(state="normal")
+        self._clear_compare_results()
+
+        if errors and (p1 is None or p2 is None):
+            self.cmp_status_lbl.configure(
+                text=I18n.t("cmp_error_load") + "\n" + "\n".join(errors),
+                text_color="#ef4444"
+            )
+            return
+
+        self._cmp_profiles = (p1, p2)
+        self.cmp_export_btn.configure(state="normal")
+
+        # ── Avatar + Name cards ────────────────────────────────────────────
+        def make_player_card(parent, profile, avatar_img, col):
+            card = ctk.CTkFrame(parent, corner_radius=12, fg_color="#1e293b",
+                                border_width=1, border_color="#334155")
+            card.grid(row=1, column=col, padx=(8 if col == 0 else 4, 4 if col == 0 else 8),
+                      pady=6, sticky="nsew")
+            card.grid_columnconfigure(0, weight=1)
+
+            av_lbl = ctk.CTkLabel(card, text="" if avatar_img else "👤", image=avatar_img,
+                                  width=100, height=100)
+            av_lbl.grid(row=0, column=0, pady=(14, 6))
+
+            ctk.CTkLabel(
+                card, text=profile["displayName"],
+                font=ctk.CTkFont(size=15, weight="bold"), text_color="#f8fafc"
+            ).grid(row=1, column=0, padx=10)
+
+            ctk.CTkLabel(
+                card, text=f"@{profile['username']}",
+                font=ctk.CTkFont(size=12), text_color="#94a3b8"
+            ).grid(row=2, column=0, padx=10, pady=(0, 10))
+
+            return card
+
+        make_player_card(self.cmp_result_frame, p1, av1, 0)
+        make_player_card(self.cmp_result_frame, p2, av2, 1)
+
+        # ── VS divider ────────────────────────────────────────────────────
+        vs_lbl = ctk.CTkLabel(
+            self.cmp_result_frame, text="⚔️ VS",
+            font=ctk.CTkFont(size=22, weight="bold"), text_color="#f59e0b"
+        )
+        vs_lbl.grid(row=1, column=0, columnspan=2, pady=4)
+
+        # ── Comparison stats ───────────────────────────────────────────────
+        def parse_date(profile):
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(
+                    profile.get("rawCreated", "").replace("Z", "+00:00")
+                )
+            except Exception:
+                return None
+
+        dt1, dt2 = parse_date(p1), parse_date(p2)
+        friends1 = p1["socials"].get("friends", 0)
+        friends2 = p2["socials"].get("friends", 0)
+        followers1 = p1["socials"].get("followers", 0)
+        followers2 = p2["socials"].get("followers", 0)
+
+        # Determine winners (lower = older account = wins age; higher = wins social)
+        w_age = 0 if (dt1 and dt2 and dt1 < dt2) else (1 if (dt1 and dt2 and dt2 < dt1) else -1)
+        w_friends = 0 if friends1 > friends2 else (1 if friends2 > friends1 else -1)
+        w_followers = 0 if followers1 > followers2 else (1 if followers2 > followers1 else -1)
+
+        WIN_COLOR = "#10b981"
+        LOSE_COLOR = "#64748b"
+        DRAW_COLOR = "#f59e0b"
+
+        def stat_row(parent, row_idx, label, val1, val2, winner_idx):
+            """Renders a comparison row with colored winner highlight."""
+            row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+            row_frame.grid(row=row_idx, column=0, columnspan=2, padx=8, pady=2, sticky="ew")
+            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(2, weight=1)
+
+            color1 = WIN_COLOR if winner_idx == 0 else (DRAW_COLOR if winner_idx == -1 else LOSE_COLOR)
+            color2 = WIN_COLOR if winner_idx == 1 else (DRAW_COLOR if winner_idx == -1 else LOSE_COLOR)
+
+            ctk.CTkLabel(row_frame, text=str(val1), font=ctk.CTkFont(size=13, weight="bold"),
+                         text_color=color1, anchor="e").grid(row=0, column=0, sticky="e")
+            ctk.CTkLabel(row_frame, text=f"  {label}  ",
+                         font=ctk.CTkFont(size=11), text_color="#475569").grid(row=0, column=1)
+            ctk.CTkLabel(row_frame, text=str(val2), font=ctk.CTkFont(size=13, weight="bold"),
+                         text_color=color2, anchor="w").grid(row=0, column=2, sticky="w")
+
+        row_start = 2
+
+        # Section header
+        stats_header = ctk.CTkLabel(
+            self.cmp_result_frame,
+            text=I18n.t("cmp_stats_title"),
+            font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8"
+        )
+        stats_header.grid(row=row_start, column=0, columnspan=2, pady=(10, 4))
+        row_start += 1
+
+        stat_row(self.cmp_result_frame, row_start,
+                 I18n.t("cmp_stat_created"),
+                 p1["createdDate"], p2["createdDate"], w_age)
+        row_start += 1
+
+        stat_row(self.cmp_result_frame, row_start,
+                 I18n.t("cmp_stat_age"),
+                 p1["accountAge"], p2["accountAge"], w_age)
+        row_start += 1
+
+        stat_row(self.cmp_result_frame, row_start,
+                 I18n.t("cmp_stat_friends"),
+                 f"{friends1:,}", f"{friends2:,}", w_friends)
+        row_start += 1
+
+        stat_row(self.cmp_result_frame, row_start,
+                 I18n.t("cmp_stat_followers"),
+                 f"{followers1:,}", f"{followers2:,}", w_followers)
+        row_start += 1
+
+        stat_row(self.cmp_result_frame, row_start,
+                 I18n.t("cmp_stat_verified"),
+                 I18n.t("verified_yes") if p1["hasVerifiedBadge"] else I18n.t("verified_no"),
+                 I18n.t("verified_yes") if p2["hasVerifiedBadge"] else I18n.t("verified_no"),
+                 0 if (p1["hasVerifiedBadge"] and not p2["hasVerifiedBadge"]) else
+                 (1 if (p2["hasVerifiedBadge"] and not p1["hasVerifiedBadge"]) else -1))
+        row_start += 1
+
+        # ── Common groups ──────────────────────────────────────────────────
+        groups1_ids = {g["id"] for g in p1.get("groups", [])}
+        groups2_ids = {g["id"] for g in p2.get("groups", [])}
+        common_ids = groups1_ids & groups2_ids
+        common_groups = [g for g in p1.get("groups", []) if g["id"] in common_ids]
+
+        sep = ctk.CTkFrame(self.cmp_result_frame, height=1, fg_color="#272f3d")
+        sep.grid(row=row_start, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="ew")
+        row_start += 1
+
+        groups_header = ctk.CTkLabel(
+            self.cmp_result_frame,
+            text=I18n.t("cmp_common_groups", count=len(common_groups)),
+            font=ctk.CTkFont(size=13, weight="bold"), text_color="#38bdf8"
+        )
+        groups_header.grid(row=row_start, column=0, columnspan=2, padx=8, pady=(0, 4))
+        row_start += 1
+
+        if common_groups:
+            for g in common_groups:
+                g_lbl = ctk.CTkLabel(
+                    self.cmp_result_frame,
+                    text=f"👥  {g['name']}",
+                    font=ctk.CTkFont(size=12), text_color="#a5b4fc"
+                )
+                g_lbl.grid(row=row_start, column=0, columnspan=2, padx=14, pady=2, sticky="w")
+                row_start += 1
+        else:
+            ctk.CTkLabel(
+                self.cmp_result_frame,
+                text=I18n.t("cmp_no_common_groups"),
+                text_color="#64748b", font=ctk.CTkFont(size=12)
+            ).grid(row=row_start, column=0, columnspan=2, padx=8, pady=(0, 10))
+            row_start += 1
+
+        # Show partial errors (non-blocking)
+        if errors:
+            err_lbl = ctk.CTkLabel(
+                self.cmp_result_frame,
+                text="⚠️ " + "  ".join(errors),
+                text_color="#f59e0b", font=ctk.CTkFont(size=11),
+                wraplength=580
+            )
+            err_lbl.grid(row=row_start, column=0, columnspan=2, padx=8, pady=(8, 4))
+
+    def _on_compare_export_clicked(self):
+        """Export comparison as PNG using Pillow (no external deps beyond PIL)."""
+        self._play_click()
+        if not self._cmp_profiles:
+            return
+        p1, p2 = self._cmp_profiles
+
+        import tkinter.filedialog as fd
+        filepath = fd.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG Image", "*.png")],
+            initialfile=f"rbx_compare_{p1['username']}_vs_{p2['username']}.png",
+            title=I18n.t("cmp_export_title")
+        )
+        if not filepath:
+            return
+
+        threading.Thread(
+            target=self._export_compare_png,
+            args=(p1, p2, filepath),
+            daemon=True
+        ).start()
+
+    def _export_compare_png(self, p1: dict, p2: dict, filepath: str):
+        """Render a comparison card as PNG and save it."""
+        try:
+            from PIL import ImageDraw, ImageFont as PilFont
+            W, H = 860, 520
+            BG = (18, 22, 33)
+            CARD_BG = (30, 41, 59)
+            BLUE = (56, 189, 248)
+            GREEN = (16, 185, 129)
+            GRAY = (100, 116, 139)
+            AMBER = (245, 158, 11)
+            WHITE = (248, 250, 252)
+
+            canvas = Image.new("RGB", (W, H), BG)
+            draw = ImageDraw.Draw(canvas)
+
+            # Try to load a system font; fall back to default
+            try:
+                font_title = PilFont.truetype("arial.ttf", 22)
+                font_body = PilFont.truetype("arial.ttf", 16)
+                font_small = PilFont.truetype("arial.ttf", 13)
+            except Exception:
+                font_title = PilFont.load_default()
+                font_body = font_title
+                font_small = font_title
+
+            # Header
+            draw.rectangle([0, 0, W, 52], fill=(15, 23, 42))
+            draw.text((20, 14), "⚔️  RBX Detective — Account Comparison", font=font_title, fill=BLUE)
+
+            # Cards
+            for col, (p, side_x) in enumerate([(p1, 20), (p2, W // 2 + 10)]):
+                cw = W // 2 - 30
+                draw.rounded_rectangle([side_x, 64, side_x + cw, 220], radius=12, fill=CARD_BG)
+                # Avatar placeholder
+                draw.ellipse([side_x + 10, 74, side_x + 100, 164], fill=(30, 58, 138))
+                draw.text((side_x + 30, 100), "👤", font=font_title, fill=(148, 163, 184))
+                # Names
+                draw.text((side_x + 115, 80), p["displayName"][:22], font=font_body, fill=WHITE)
+                draw.text((side_x + 115, 110), f"@{p['username'][:22]}", font=font_small, fill=tuple(GRAY))
+                draw.text((side_x + 115, 140), p["createdDate"], font=font_small, fill=tuple(GRAY))
+                draw.text((side_x + 115, 162), p["accountAge"], font=font_small, fill=tuple(BLUE))
+
+            # Stats comparison table
+            rows = [
+                (I18n.t("cmp_stat_friends"), p1["socials"].get("friends", 0), p2["socials"].get("friends", 0)),
+                (I18n.t("cmp_stat_followers"), p1["socials"].get("followers", 0), p2["socials"].get("followers", 0)),
+            ]
+            y = 235
+            for label, v1, v2 in rows:
+                w = "left" if v1 > v2 else ("right" if v2 > v1 else "tie")
+                c1 = GREEN if w == "left" else (AMBER if w == "tie" else GRAY)
+                c2 = GREEN if w == "right" else (AMBER if w == "tie" else GRAY)
+                draw.text((30, y), f"{v1:,}", font=font_body, fill=c1)
+                draw.text((W // 2 - 80, y), label, font=font_small, fill=(148, 163, 184))
+                draw.text((W // 2 + 60, y), f"{v2:,}", font=font_body, fill=c2)
+                y += 30
+
+            # Footer
+            draw.rectangle([0, H - 30, W, H], fill=(15, 23, 42))
+            draw.text((20, H - 22), "Generated by RBX Detective  •  github.com/RostUAGamer/RBX-detective",
+                      font=font_small, fill=tuple(GRAY))
+
+            canvas.save(filepath, "PNG")
+            self.after(0, lambda: self.status_lbl.configure(
+                text=I18n.t("cmp_export_done", path=filepath), text_color="#10b981"
+            ))
+        except Exception as e:
+            self.after(0, lambda: self.status_lbl.configure(
+                text=I18n.t("cmp_export_error", error=str(e)), text_color="#ef4444"
+            ))
 
     def _open_settings_dialog(self):
         """Unified Settings Dialog with Language selector and Sound volume slider."""
@@ -535,6 +1045,12 @@ class RBXDetectiveApp(ctk.CTk):
             self.join_game_btn.configure(text=I18n.t("btn_player_not_ingame"))
             self.presence_badge.configure(text=f"● {I18n.t('offline')}")
 
+        # Refresh new button labels
+        if hasattr(self, "random_player_btn"):
+            self.random_player_btn.configure(text=I18n.t("btn_random_player"))
+        if hasattr(self, "joinable_player_btn"):
+            self.joinable_player_btn.configure(text=I18n.t("btn_random_joinable"))
+
     def start_search(self):
         query = self.search_entry.get().strip()
         if not query:
@@ -569,6 +1085,7 @@ class RBXDetectiveApp(ctk.CTk):
         self.current_profile_data = profile
         self.search_btn.configure(state="normal")
         self.status_lbl.configure(text=I18n.t("status_success", username=profile["username"]), text_color="#10b981")
+        self._re_enable_buttons()
 
         self.display_name_lbl.configure(text=profile["displayName"])
         self.username_lbl.configure(text=f"@{profile['username']}")

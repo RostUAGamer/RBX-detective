@@ -232,6 +232,73 @@ class RobloxAPI:
         return badges_found
 
     @classmethod
+    def find_random_player(cls) -> Optional[Dict[str, Any]]:
+        """
+        Find a random public Roblox player by sampling user IDs from recent registrations.
+        Returns basic user data dict or None.
+        """
+        import random
+        # Roblox has hundreds of millions of user IDs. We sample in a high-traffic range.
+        MAX_ATTEMPTS = 20
+        for _ in range(MAX_ATTEMPTS):
+            try:
+                uid = random.randint(1_000_000, 6_000_000_000)
+                resp = cls.SESSION.get(f"https://users.roblox.com/v1/users/{uid}", timeout=6)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Skip banned or users without name
+                    if data.get("name") and not data.get("isBanned", False):
+                        return data
+            except Exception:
+                continue
+        return None
+
+    @classmethod
+    def find_joinable_player(cls, max_candidates: int = 60) -> Optional[Dict[str, Any]]:
+        """
+        Find a random Roblox player who is currently in-game AND has a public place ID
+        (meaning followers/friends can join them — join is open/not restricted).
+        Returns the full profile dict (same format as fetch_full_profile) or None.
+        """
+        import random
+        checked = 0
+        while checked < max_candidates:
+            checked += 1
+            try:
+                uid = random.randint(1_000_000, 6_000_000_000)
+                user_resp = cls.SESSION.get(f"https://users.roblox.com/v1/users/{uid}", timeout=5)
+                if user_resp.status_code != 200:
+                    continue
+                udata = user_resp.json()
+                if not udata.get("name") or udata.get("isBanned", False):
+                    continue
+
+                # Check presence
+                pres_resp = cls.SESSION.post(
+                    "https://presence.roblox.com/v1/presence/users",
+                    json={"userIds": [uid]},
+                    timeout=6
+                )
+                if pres_resp.status_code != 200:
+                    continue
+                presences = pres_resp.json().get("userPresences", [])
+                if not presences:
+                    continue
+                p = presences[0]
+                # presenceType == 2 means InGame; placeId must be set for join to work
+                if p.get("userPresenceType") != 2:
+                    continue
+                place_id = p.get("placeId")
+                if not place_id:
+                    continue
+
+                # Player is in-game with a visible placeId — joinable!
+                return cls.fetch_full_profile(str(uid))
+            except Exception:
+                continue
+        return None
+
+    @classmethod
     def fetch_full_profile(cls, query: str) -> Dict[str, Any]:
         """Coordinates 100% public data fetching."""
         user_basic = None
